@@ -13,7 +13,7 @@ from PySide6.QtCore import QDate, Qt, QSettings, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QPalette
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateEdit, QDialog,
-    QDialogButtonBox, QFormLayout, QHBoxLayout, QHeaderView,
+    QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
     QPlainTextEdit, QPushButton, QScrollArea, QSplitter,
     QTabWidget, QTableWidget, QTableWidgetItem, QTreeWidget,
@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from checkout_tool_backend import CheckoutStore, Job, ValveCheckout
+from checkout_export import export_records
 from version import __version__
 import updater
 
@@ -281,6 +282,14 @@ class MainWindow(QMainWindow):
         new_co_act.setShortcut("Ctrl+N")
         new_co_act.triggered.connect(self._on_new_checkout)
         file_menu.addAction(new_co_act)
+        file_menu.addSeparator()
+        export_act = QAction("Export Selected Checkout\u2026", self)
+        export_act.setShortcut("Ctrl+E")
+        export_act.triggered.connect(self._on_export_current)
+        file_menu.addAction(export_act)
+        export_job_act = QAction("Export All Checkouts in Job\u2026", self)
+        export_job_act.triggered.connect(self._on_export_job)
+        file_menu.addAction(export_job_act)
         file_menu.addSeparator()
         exit_act = QAction("Exit", self)
         exit_act.triggered.connect(self.close)
@@ -832,17 +841,26 @@ class MainWindow(QMainWindow):
         if kind == "job":
             add_act = menu.addAction("Add Checkout to Job")
             menu.addSeparator()
+            export_job_act = menu.addAction("Export All Checkouts to Excel\u2026")
+            menu.addSeparator()
             del_act = menu.addAction("Delete Job")
             action = menu.exec(self._tree.mapToGlobal(pos))
             if action == add_act:
                 job = self._store.get_job(id_)
                 if job:
                     self._open_new_checkout_for_job(job)
+            elif action == export_job_act:
+                self._export_job(id_)
             elif action == del_act:
                 self._delete_job(id_)
         else:
+            export_act = menu.addAction("Export to Excel\u2026")
+            menu.addSeparator()
             del_act = menu.addAction("Delete Checkout")
-            if menu.exec(self._tree.mapToGlobal(pos)) == del_act:
+            action = menu.exec(self._tree.mapToGlobal(pos))
+            if action == export_act:
+                self._export_checkout(id_)
+            elif action == del_act:
                 self._delete_checkout(id_)
 
     # ── Actions ───────────────────────────────────────────────────────────────
@@ -903,6 +921,64 @@ class MainWindow(QMainWindow):
                 self._current_id = None
             self._refresh_tree()
             self._load_record(None)
+
+    # ── Export ────────────────────────────────────────────────────────────────
+
+    def _on_export_current(self) -> None:
+        if self._current_id is None:
+            QMessageBox.information(self, "No Checkout Selected",
+                                    "Select a checkout record first, then export.")
+            return
+        self._export_checkout(self._current_id)
+
+    def _on_export_job(self) -> None:
+        job_id = self._selected_job_id()
+        if not job_id:
+            QMessageBox.information(self, "No Job Selected",
+                                    "Select a job first, then export.")
+            return
+        self._export_job(job_id)
+
+    def _export_checkout(self, record_id: str) -> None:
+        record = self._store.get(record_id)
+        if not record:
+            return
+        default_name = f"{record.valve_tag or 'Checkout'}.xlsx"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Checkout", default_name,
+            "Excel Workbook (*.xlsx)"
+        )
+        if not path:
+            return
+        try:
+            export_records([record], path)
+            QMessageBox.information(self, "Export Complete",
+                                    f"Exported to:\n{path}")
+        except Exception as exc:
+            QMessageBox.critical(self, "Export Failed", str(exc))
+
+    def _export_job(self, job_id: str) -> None:
+        records = self._store.records_for_job(job_id)
+        if not records:
+            QMessageBox.information(self, "No Checkouts",
+                                    "This job has no checkout records to export.")
+            return
+        job = self._store.get_job(job_id)
+        default_name = f"{job.job_number or job.job_name or 'Job'} Checkouts.xlsx"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export All Checkouts", default_name,
+            "Excel Workbook (*.xlsx)"
+        )
+        if not path:
+            return
+        try:
+            export_records(records, path)
+            QMessageBox.information(
+                self, "Export Complete",
+                f"Exported {len(records)} checkout{'s' if len(records) != 1 else ''} to:\n{path}"
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "Export Failed", str(exc))
 
     # ── Load / save record ────────────────────────────────────────────────────
 
