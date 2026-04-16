@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
     QPlainTextEdit, QPushButton, QScrollArea, QSpinBox, QSplitter,
-    QTabWidget, QTableWidget, QTableWidgetItem, QTreeWidget,
+    QStackedWidget, QTabWidget, QTableWidget, QTableWidgetItem, QTreeWidget,
     QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
@@ -541,16 +541,256 @@ class MainWindow(QMainWindow):
 
     def _build_main_area(self) -> QWidget:
         widget = _BgWidget()
-        lay = QVBoxLayout(widget)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(8)
-        lay.addWidget(self._build_header_panel())
-        lay.addWidget(self._build_tabs(), stretch=1)
+        outer_lay = QVBoxLayout(widget)
+        outer_lay.setContentsMargins(0, 0, 0, 0)
+        outer_lay.setSpacing(8)
+
+        # Page 0: welcome  |  Page 1: checkout editor  |  Page 2: archived job summary
+        self._main_stack = QStackedWidget()
+        self._main_stack.addWidget(self._build_welcome_panel())  # index 0
+
+        content_widget = QWidget()
+        content_lay = QVBoxLayout(content_widget)
+        content_lay.setContentsMargins(0, 0, 0, 0)
+        content_lay.setSpacing(8)
+        content_lay.addWidget(self._build_header_panel())
+        content_lay.addWidget(self._build_tabs(), stretch=1)
+        self._main_stack.addWidget(content_widget)               # index 1
+
+        self._main_stack.addWidget(self._build_archived_panel()) # index 2
+
+        outer_lay.addWidget(self._main_stack, stretch=1)
 
         self._update_banner = self._build_update_banner()
         self._update_banner.setVisible(False)
-        lay.addWidget(self._update_banner)
+        outer_lay.addWidget(self._update_banner)
         return widget
+
+    # ── Welcome / instructions panel ──────────────────────────────────────────
+
+    def _build_welcome_panel(self) -> QWidget:
+        outer = QWidget()
+        lay = QVBoxLayout(outer)
+        lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.setContentsMargins(80, 40, 80, 40)
+        lay.setSpacing(0)
+
+        title = QLabel("Phoenix Valve Checkout Tool")
+        title.setObjectName("ProjectTitle")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(title)
+
+        lay.addSpacing(6)
+
+        sub = QLabel("Get started by creating a job, then add checkout sheets to it.")
+        sub.setObjectName("ProjectSubtitle")
+        sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        sub.setWordWrap(True)
+        lay.addWidget(sub)
+
+        lay.addSpacing(32)
+
+        steps = [
+            ("1", "Create a Job",
+             "Click  + New Job  in the sidebar, or press  Ctrl+J.\n"
+             "A job groups all checkout sheets for one project or site."),
+            ("2", "Add a Checkout Sheet",
+             "Select a job, then click  + New Checkout  or press  Ctrl+N.\n"
+             "Each sheet tracks wiring, configuration, and verification for one valve."),
+            ("3", "Batch Add Checkout Sheets",
+             "Click  + Batch Add  or press  Ctrl+B.\n"
+             "Enter a starting tag (e.g. MAV-1-100) and a count to generate\n"
+             "multiple sheets at once with automatically incremented valve tags."),
+        ]
+
+        for num, step_title, step_desc in steps:
+            card = QWidget()
+            card.setObjectName("Panel")
+            card_lay = QHBoxLayout(card)
+            card_lay.setContentsMargins(20, 16, 20, 16)
+            card_lay.setSpacing(18)
+
+            badge = QLabel(num)
+            badge.setFixedSize(38, 38)
+            badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            badge.setStyleSheet(
+                "background:#487cff; color:white; border-radius:19px;"
+                "font-weight:700; font-size:13pt;"
+            )
+            card_lay.addWidget(badge, alignment=Qt.AlignmentFlag.AlignTop)
+
+            text_col = QVBoxLayout()
+            text_col.setSpacing(4)
+            h_lbl = QLabel(step_title)
+            h_lbl.setObjectName("SectionTitle")
+            d_lbl = QLabel(step_desc)
+            d_lbl.setWordWrap(True)
+            text_col.addWidget(h_lbl)
+            text_col.addWidget(d_lbl)
+            card_lay.addLayout(text_col)
+
+            lay.addWidget(card)
+            lay.addSpacing(12)
+
+        lay.addStretch()
+        return outer
+
+    # ── Archived job summary panel ────────────────────────────────────────────
+
+    def _build_archived_panel(self) -> QWidget:
+        """Container for the archived-job read-only summary view (page 2)."""
+        outer = QWidget()
+        outer_lay = QVBoxLayout(outer)
+        outer_lay.setContentsMargins(0, 0, 0, 0)
+        outer_lay.setSpacing(8)
+
+        # Header bar (same style as the regular header panel)
+        hdr = QWidget()
+        hdr.setObjectName("Panel")
+        hdr.setFixedHeight(72)
+        hdr_lay = QHBoxLayout(hdr)
+        hdr_lay.setContentsMargins(20, 10, 20, 10)
+        hdr_lay.setSpacing(20)
+
+        text_col = QVBoxLayout()
+        text_col.setSpacing(2)
+        self._arch_hdr_title = QLabel("")
+        self._arch_hdr_title.setObjectName("ProjectTitle")
+        self._arch_hdr_sub = QLabel("")
+        self._arch_hdr_sub.setObjectName("ProjectSubtitle")
+        text_col.addWidget(self._arch_hdr_title)
+        text_col.addWidget(self._arch_hdr_sub)
+        hdr_lay.addLayout(text_col)
+        hdr_lay.addStretch()
+
+        arch_badge = QLabel("ARCHIVED")
+        arch_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        arch_badge.setFixedHeight(32)
+        arch_badge.setStyleSheet(
+            "background:#6b4c00; color:#f0b429; border-radius:8px;"
+            "font-weight:700; font-size:10pt; padding:0 10px;"
+        )
+        hdr_lay.addWidget(arch_badge)
+
+        restore_btn = QPushButton("Restore Job")
+        restore_btn.setObjectName("RestoreBtn")
+        restore_btn.clicked.connect(self._on_restore_archived_from_panel)
+        hdr_lay.addWidget(restore_btn)
+
+        outer_lay.addWidget(hdr)
+
+        # Scrollable checkout list
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+
+        self._arch_list_widget = QWidget()
+        self._arch_list_layout = QVBoxLayout(self._arch_list_widget)
+        self._arch_list_layout.setContentsMargins(0, 0, 8, 0)
+        self._arch_list_layout.setSpacing(4)
+        self._arch_list_layout.addStretch()
+
+        scroll.setWidget(self._arch_list_widget)
+        outer_lay.addWidget(scroll, stretch=1)
+        return outer
+
+    def _populate_archived_panel(self, job_id: str) -> None:
+        """Fill the archived job summary panel for the given job."""
+        job = self._store.get_job(job_id)
+        if not job:
+            return
+
+        self._arch_current_job_id = job_id
+        self._arch_hdr_title.setText(_job_label(job))
+
+        records = self._store.records_for_job(job_id)
+        total  = len(records)
+        passes = sum(1 for r in records if r.pass_fail == "Pass")
+        fails  = sum(1 for r in records if r.pass_fail == "Fail")
+        self._arch_hdr_sub.setText(
+            f"{total} checkout{'s' if total != 1 else ''}   \u2022   "
+            f"{passes} passed   \u2022   {fails} failed"
+        )
+
+        # Clear old rows (keep the trailing stretch)
+        while self._arch_list_layout.count() > 1:
+            item = self._arch_list_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        if not records:
+            empty_lbl = QLabel("No checkout sheets in this job.")
+            empty_lbl.setObjectName("ProjectSubtitle")
+            empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._arch_list_layout.insertWidget(0, empty_lbl)
+            return
+
+        panel = QWidget()
+        panel.setObjectName("Panel")
+        panel_lay = QVBoxLayout(panel)
+        panel_lay.setContentsMargins(16, 12, 16, 12)
+        panel_lay.setSpacing(0)
+
+        title_lbl = QLabel("Checkout Sheets")
+        title_lbl.setObjectName("SectionTitle")
+        panel_lay.addWidget(title_lbl)
+        panel_lay.addSpacing(10)
+
+        for record in records:
+            row = QWidget()
+            row_lay = QHBoxLayout(row)
+            row_lay.setContentsMargins(8, 6, 8, 6)
+            row_lay.setSpacing(12)
+
+            tag_lbl = QLabel(record.valve_tag or "(No Tag)")
+            tag_font = QFont()
+            tag_font.setPointSize(10)
+            tag_lbl.setFont(tag_font)
+            if record.pass_fail == "Pass":
+                tag_lbl.setStyleSheet(f"color: #{_PASS_COLOR.name()[1:]};")
+            elif record.pass_fail == "Fail":
+                tag_lbl.setStyleSheet(f"color: #{_FAIL_COLOR.name()[1:]};")
+            row_lay.addWidget(tag_lbl, stretch=1)
+
+            if record.pass_fail in ("Pass", "Fail"):
+                pf_lbl = QLabel(record.pass_fail.upper())
+                pf_lbl.setFixedWidth(48)
+                pf_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                color = "#2d8a4a" if record.pass_fail == "Pass" else "#c0392b"
+                pf_lbl.setStyleSheet(
+                    f"background:{color}; color:white; border-radius:5px;"
+                    "font-weight:700; font-size:9pt;"
+                )
+                row_lay.addWidget(pf_lbl)
+
+            if record.technician:
+                tech_lbl = QLabel(record.technician)
+                tech_lbl.setObjectName("ProjectSubtitle")
+                tech_lbl.setFixedWidth(120)
+                row_lay.addWidget(tech_lbl)
+
+            if record.date:
+                date_lbl = QLabel(record.date)
+                date_lbl.setObjectName("ProjectSubtitle")
+                date_lbl.setFixedWidth(90)
+                date_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                row_lay.addWidget(date_lbl)
+
+            panel_lay.addWidget(row)
+
+            # Thin separator line between rows
+            if record is not records[-1]:
+                sep = QWidget()
+                sep.setFixedHeight(1)
+                sep.setStyleSheet("background: rgba(128,128,128,60);")
+                panel_lay.addWidget(sep)
+
+        self._arch_list_layout.insertWidget(0, panel)
+
+    def _on_restore_archived_from_panel(self) -> None:
+        job_id = getattr(self, "_arch_current_job_id", None)
+        if job_id:
+            self._restore_job(job_id)
 
     # ── Header panel ─────────────────────────────────────────────────────────
 
@@ -947,6 +1187,27 @@ class MainWindow(QMainWindow):
             self._tree.addTopLevelItem(job_item)
             job_item.setExpanded(True)
 
+        # ── Archived jobs section ──────────────────────────────────────────────
+        archived = self._store.archived_jobs()
+        if archived:
+            sep = QTreeWidgetItem(["── Archived Jobs ──"])
+            sep.setFlags(Qt.ItemFlag.ItemIsEnabled)   # not selectable / draggable
+            sep.setForeground(0, QBrush(QColor(130, 130, 130)))
+            sep.setData(0, self._ROLE, ("separator", None))
+            self._tree.addTopLevelItem(sep)
+
+            arch_font = QFont()
+            arch_font.setItalic(True)
+            arch_font.setPointSize(10)
+            gray = QBrush(QColor(140, 140, 140))
+
+            for job in archived:
+                arch_item = QTreeWidgetItem([_job_label(job)])
+                arch_item.setFont(0, arch_font)
+                arch_item.setForeground(0, gray)
+                arch_item.setData(0, self._ROLE, ("archived_job", job.id))
+                self._tree.addTopLevelItem(arch_item)
+
         self._tree.blockSignals(False)
 
         if select_id:
@@ -956,17 +1217,21 @@ class MainWindow(QMainWindow):
 
     def _select_by_id(self, target_id: str) -> None:
         for i in range(self._tree.topLevelItemCount()):
-            job_item = self._tree.topLevelItem(i)
-            _, jid = job_item.data(0, self._ROLE)
-            if jid == target_id:
-                self._tree.setCurrentItem(job_item)
+            item = self._tree.topLevelItem(i)
+            role = item.data(0, self._ROLE)
+            if role is None:
+                continue
+            kind, id_ = role
+            if kind in ("job", "archived_job") and id_ == target_id:
+                self._tree.setCurrentItem(item)
                 return
-            for j in range(job_item.childCount()):
-                child = job_item.child(j)
-                _, cid = child.data(0, self._ROLE)
-                if cid == target_id:
-                    self._tree.setCurrentItem(child)
-                    return
+            if kind == "job":
+                for j in range(item.childCount()):
+                    child = item.child(j)
+                    _, cid = child.data(0, self._ROLE)
+                    if cid == target_id:
+                        self._tree.setCurrentItem(child)
+                        return
 
     def _apply_item_color(self, item: QTreeWidgetItem, pass_fail: str) -> None:
         if pass_fail == "Pass":
@@ -977,15 +1242,17 @@ class MainWindow(QMainWindow):
             item.setForeground(0, QBrush())  # reset to palette default
 
     def _selected_job_id(self) -> Optional[str]:
-        """Return the job_id of whatever is currently selected in the tree."""
+        """Return the job_id of the active (non-archived) job currently selected."""
         items = self._tree.selectedItems()
         if not items:
             return None
         kind, id_ = items[0].data(0, self._ROLE)
         if kind == "job":
             return id_
-        rec = self._store.get(id_)
-        return rec.job_id if rec else None
+        if kind == "checkout":
+            rec = self._store.get(id_)
+            return rec.job_id if rec else None
+        return None  # archived_job and separator are not usable as targets
 
     # ── Tree signals ──────────────────────────────────────────────────────────
 
@@ -995,45 +1262,74 @@ class MainWindow(QMainWindow):
         _previous: Optional[QTreeWidgetItem],
     ) -> None:
         if current is None:
+            self._main_stack.setCurrentIndex(0)   # welcome
             self._load_record(None)
             self._new_checkout_btn.setEnabled(False)
             self._batch_btn.setEnabled(False)
             return
 
         kind, id_ = current.data(0, self._ROLE)
-        self._new_checkout_btn.setEnabled(True)
-        self._batch_btn.setEnabled(True)
+
+        # Non-selectable separator — clear selection and go back to welcome
+        if kind == "separator":
+            self._tree.clearSelection()
+            self._main_stack.setCurrentIndex(0)
+            self._load_record(None)
+            self._new_checkout_btn.setEnabled(False)
+            self._batch_btn.setEnabled(False)
+            return
+
+        if kind == "archived_job":
+            self._new_checkout_btn.setEnabled(False)
+            self._batch_btn.setEnabled(False)
+            self._populate_archived_panel(id_)
+            self._main_stack.setCurrentIndex(2)   # archived summary
+            return
+
+        self._main_stack.setCurrentIndex(1)   # checkout editor
 
         if kind == "job":
+            self._new_checkout_btn.setEnabled(True)
+            self._batch_btn.setEnabled(True)
             job = self._store.get_job(id_)
             self._load_record(None)
             if job:
                 self._hdr_tag.setText(_job_label(job))
-                records  = self._store.records_for_job(job.id)
-                total    = len(records)
-                passes   = sum(1 for r in records if r.pass_fail == "Pass")
-                fails    = sum(1 for r in records if r.pass_fail == "Fail")
+                records = self._store.records_for_job(job.id)
+                total   = len(records)
+                passes  = sum(1 for r in records if r.pass_fail == "Pass")
+                fails   = sum(1 for r in records if r.pass_fail == "Fail")
                 self._hdr_sub.setText(
                     f"{total} checkout{'s' if total != 1 else ''}   \u2022   "
                     f"{passes} passed   \u2022   {fails} failed"
                 )
-        else:
+        else:  # checkout
+            self._new_checkout_btn.setEnabled(True)
+            self._batch_btn.setEnabled(True)
             self._load_record(self._store.get(id_))
 
     def _on_tree_context_menu(self, pos) -> None:
         item = self._tree.itemAt(pos)
         if not item:
             return
-        kind, id_ = item.data(0, self._ROLE)
+        role = item.data(0, self._ROLE)
+        if role is None:
+            return
+        kind, id_ = role
+        if kind == "separator":
+            return
+
         menu = QMenu(self)
 
         if kind == "job":
-            add_act = menu.addAction("Add Checkout to Job")
-            batch_act = menu.addAction("Batch Add Checkouts\u2026")
+            add_act        = menu.addAction("Add Checkout to Job")
+            batch_act      = menu.addAction("Batch Add Checkouts\u2026")
             menu.addSeparator()
             export_job_act = menu.addAction("Export All Checkouts to Excel\u2026")
             menu.addSeparator()
-            del_act = menu.addAction("Delete Job")
+            archive_act    = menu.addAction("Archive Job")
+            menu.addSeparator()
+            del_act        = menu.addAction("Delete Job")
             action = menu.exec(self._tree.mapToGlobal(pos))
             if action == add_act:
                 job = self._store.get_job(id_)
@@ -1043,9 +1339,22 @@ class MainWindow(QMainWindow):
                 self._batch_add_for_job(id_)
             elif action == export_job_act:
                 self._export_job(id_)
+            elif action == archive_act:
+                self._archive_job(id_)
             elif action == del_act:
                 self._delete_job(id_)
-        else:
+
+        elif kind == "archived_job":
+            restore_act = menu.addAction("Restore Job")
+            menu.addSeparator()
+            del_act     = menu.addAction("Delete Job Permanently")
+            action = menu.exec(self._tree.mapToGlobal(pos))
+            if action == restore_act:
+                self._restore_job(id_)
+            elif action == del_act:
+                self._delete_job(id_)
+
+        else:  # checkout
             export_act = menu.addAction("Export to Excel\u2026")
             menu.addSeparator()
             del_act = menu.addAction("Delete Checkout")
@@ -1134,6 +1443,22 @@ class MainWindow(QMainWindow):
             self._refresh_tree()
             self._load_record(None)
 
+    def _archive_job(self, job_id: str) -> None:
+        job = self._store.get_job(job_id)
+        if not job:
+            return
+        self._store.archive_job(job_id)
+        if self._current_id:
+            rec = self._store.get(self._current_id)
+            if rec and rec.job_id == job_id:
+                self._current_id = None
+        self._refresh_tree()
+        self._load_record(None)
+
+    def _restore_job(self, job_id: str) -> None:
+        self._store.restore_job(job_id)
+        self._refresh_tree(select_id=job_id)
+
     # ── Export ────────────────────────────────────────────────────────────────
 
     def _on_export_current(self) -> None:
@@ -1200,6 +1525,9 @@ class MainWindow(QMainWindow):
         self._tabs.setEnabled(record is not None)
 
         if not record:
+            # Switch to welcome page if tree has no current selection
+            if self._tree.currentItem() is None:
+                self._main_stack.setCurrentIndex(0)
             self._hdr_tag.setText("Select a job or checkout")
             self._hdr_sub.setText("")
             self._hdr_badge.setText("")
@@ -1490,6 +1818,8 @@ def apply_light_theme(app: QApplication) -> None:
         QTreeWidget::item:selected { background:#487cff; color:white; }
         QTreeWidget::item:hover:!selected { background:#c3c6ce; }
         QTreeView::branch { background:transparent; }
+        QTreeView::branch:selected { background:#487cff; }
+        QTreeView::branch:hover:!selected { background:#c3c6ce; }
         QTableWidget {
             background:transparent; border:1px solid #a8acb8; border-radius:10px;
             padding:4px; color:#191919; gridline-color:#c8ccd4;
@@ -1508,6 +1838,8 @@ def apply_light_theme(app: QApplication) -> None:
         #UpdateBanner QLabel#UpdateMsg { color:#1a6830; font-weight:600; }
         #InstallBtn { background:#2d8a4a; border:1px solid #3daa5a; color:white; font-weight:700; }
         #InstallBtn:hover { background:#3daa5a; }
+        #RestoreBtn { background:#7c5c00; border:1px solid #f0b429; color:#f0b429; font-weight:700; }
+        #RestoreBtn:hover { background:#a07800; }
     """)
 
 
@@ -1567,6 +1899,8 @@ def apply_dark_theme(app: QApplication) -> None:
         QTreeWidget::item:selected { background:#2d4c8f; color:white; }
         QTreeWidget::item:hover:!selected { background:#383838; }
         QTreeView::branch { background:transparent; }
+        QTreeView::branch:selected { background:#2d4c8f; }
+        QTreeView::branch:hover:!selected { background:#383838; }
         QTableWidget {
             background:transparent; border:1px solid #404040; border-radius:10px;
             padding:4px; color:#ececec; gridline-color:#333333;
@@ -1585,6 +1919,8 @@ def apply_dark_theme(app: QApplication) -> None:
         #UpdateBanner QLabel#UpdateMsg { color:#6ee7a0; font-weight:600; }
         #InstallBtn { background:#1e5c32; border:1px solid #2d8a4a; color:white; font-weight:700; }
         #InstallBtn:hover { background:#2d8a4a; }
+        #RestoreBtn { background:#5c3d00; border:1px solid #f0b429; color:#f0b429; font-weight:700; }
+        #RestoreBtn:hover { background:#7a5200; }
     """)
 
 

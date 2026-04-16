@@ -27,9 +27,10 @@ DATA_FILE = _app_data_path("data.json")
 @dataclass
 class Job:
     """A job / project container that holds one or more valve checkout records."""
-    id:         str = field(default_factory=lambda: str(uuid.uuid4()))
-    job_number: str = ""
-    job_name:   str = ""
+    id:         str  = field(default_factory=lambda: str(uuid.uuid4()))
+    job_number: str  = ""
+    job_name:   str  = ""
+    archived:   bool = False
 
 
 # ── Checkout record ────────────────────────────────────────────────────────────
@@ -111,8 +112,18 @@ class CheckoutStore:
     # ── Job API ────────────────────────────────────────────────────────────────
 
     def all_jobs(self) -> list[Job]:
-        """All jobs sorted by job_number then job_name."""
-        return sorted(self._jobs, key=lambda j: (j.job_number.lower(), j.job_name.lower()))
+        """Active (non-archived) jobs sorted by job_number then job_name."""
+        return sorted(
+            [j for j in self._jobs if not j.archived],
+            key=lambda j: (j.job_number.lower(), j.job_name.lower()),
+        )
+
+    def archived_jobs(self) -> list[Job]:
+        """Archived jobs sorted by job_number then job_name."""
+        return sorted(
+            [j for j in self._jobs if j.archived],
+            key=lambda j: (j.job_number.lower(), j.job_name.lower()),
+        )
 
     def get_job(self, job_id: str) -> Optional[Job]:
         return next((j for j in self._jobs if j.id == job_id), None)
@@ -127,6 +138,20 @@ class CheckoutStore:
                 self._jobs[idx] = job
                 self._save()
                 return
+
+    def archive_job(self, job_id: str) -> None:
+        """Mark a job as archived (hidden from active view)."""
+        job = self.get_job(job_id)
+        if job:
+            job.archived = True
+            self._save()
+
+    def restore_job(self, job_id: str) -> None:
+        """Restore an archived job back to active."""
+        job = self.get_job(job_id)
+        if job:
+            job.archived = False
+            self._save()
 
     def delete_job(self, job_id: str) -> None:
         """Delete a job and all its checkout records."""
