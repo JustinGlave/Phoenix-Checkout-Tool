@@ -115,35 +115,51 @@ def _app_data_path(filename: str) -> str:
 
 class _BgWidget(QWidget):
     """
-    Widget that paints the app logo as a semi-transparent watermark.
-    Used as the right-side main area so the logo shows in the empty space
-    below/behind the content panels.
+    Container widget that floats a semi-transparent logo overlay on top of all
+    child content. The overlay QLabel is transparent for mouse events so it
+    never interferes with interaction.
     """
-    _OPACITY = 0.18   # 18 % — visible in empty areas, subtle behind panels
-    _SIZE_FRAC = 0.55  # logo takes up 55 % of the widget's shorter dimension
+    _OPACITY   = 0.12   # 12 % — subtle but clearly visible
+    _SIZE_FRAC = 0.52   # logo diameter = 52 % of the shorter widget dimension
 
     def __init__(self) -> None:
         super().__init__()
         path = _resource_path("PTT_Transparent_green.png")
-        self._pixmap = QPixmap(path) if os.path.exists(path) else QPixmap()
+        self._src = QPixmap(path) if os.path.exists(path) else QPixmap()
 
-    def paintEvent(self, event) -> None:  # type: ignore[override]
-        super().paintEvent(event)
-        if self._pixmap.isNull():
+        self._overlay = QLabel(self)
+        self._overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        self._overlay.setStyleSheet("background: transparent;")
+        self._overlay.setAttribute(Qt.WidgetAttribute.WA_NoSystemBackground)
+
+    def resizeEvent(self, event) -> None:
+        super().resizeEvent(event)
+        self._reposition()
+
+    def _reposition(self) -> None:
+        if self._src.isNull() or self.width() == 0:
             return
-        painter = QPainter(self)
-        painter.setOpacity(self._OPACITY)
         size = int(min(self.width(), self.height()) * self._SIZE_FRAC)
-        scaled = self._pixmap.scaled(
+        scaled = self._src.scaled(
             size, size,
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
-        # Centre the logo in this widget
-        x = (self.width()  - scaled.width())  // 2
-        y = (self.height() - scaled.height()) // 2
-        painter.drawPixmap(x, y, scaled)
-        painter.end()
+        # Bake opacity into a new pixmap so it renders correctly over any background
+        faded = QPixmap(scaled.size())
+        faded.fill(Qt.GlobalColor.transparent)
+        p = QPainter(faded)
+        p.setOpacity(self._OPACITY)
+        p.drawPixmap(0, 0, scaled)
+        p.end()
+
+        self._overlay.setPixmap(faded)
+        self._overlay.resize(faded.size())
+        self._overlay.move(
+            (self.width()  - faded.width())  // 2,
+            (self.height() - faded.height()) // 2,
+        )
+        self._overlay.raise_()   # always on top of siblings
 
 
 def _centered_checkbox(checked: bool = False, enabled: bool = True) -> tuple[QWidget, QCheckBox]:
