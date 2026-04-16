@@ -747,9 +747,9 @@ class MainWindow(QMainWindow):
             tag_font.setPointSize(10)
             tag_lbl.setFont(tag_font)
             if record.pass_fail == "Pass":
-                tag_lbl.setStyleSheet(f"color: #{_PASS_COLOR.name()[1:]};")
+                tag_lbl.setStyleSheet(f"color: {_PASS_COLOR.name()};")
             elif record.pass_fail == "Fail":
-                tag_lbl.setStyleSheet(f"color: #{_FAIL_COLOR.name()[1:]};")
+                tag_lbl.setStyleSheet(f"color: {_FAIL_COLOR.name()};")
             row_lay.addWidget(tag_lbl, stretch=1)
 
             if record.pass_fail in ("Pass", "Fail"):
