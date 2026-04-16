@@ -114,8 +114,13 @@ def _app_data_path(filename: str) -> str:
 
 
 class _BgWidget(QWidget):
-    """Central widget that paints the app logo as a semi-transparent watermark."""
-    _OPACITY = 0.06   # 6 % — subtle behind content
+    """
+    Widget that paints the app logo as a semi-transparent watermark.
+    Used as the right-side main area so the logo shows in the empty space
+    below/behind the content panels.
+    """
+    _OPACITY = 0.18   # 18 % — visible in empty areas, subtle behind panels
+    _SIZE_FRAC = 0.55  # logo takes up 55 % of the widget's shorter dimension
 
     def __init__(self) -> None:
         super().__init__()
@@ -128,13 +133,13 @@ class _BgWidget(QWidget):
             return
         painter = QPainter(self)
         painter.setOpacity(self._OPACITY)
-        # Scale to fit the shorter dimension, centred
-        size = min(self.width(), self.height())
+        size = int(min(self.width(), self.height()) * self._SIZE_FRAC)
         scaled = self._pixmap.scaled(
             size, size,
             Qt.AspectRatioMode.KeepAspectRatio,
             Qt.TransformationMode.SmoothTransformation,
         )
+        # Centre the logo in this widget
         x = (self.width()  - scaled.width())  // 2
         y = (self.height() - scaled.height()) // 2
         painter.drawPixmap(x, y, scaled)
@@ -339,7 +344,7 @@ class MainWindow(QMainWindow):
     # ── Top-level layout ──────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
-        root = _BgWidget()
+        root = QWidget()
         root_lay = QHBoxLayout(root)
         root_lay.setContentsMargins(8, 8, 8, 8)
         root_lay.setSpacing(8)
@@ -381,7 +386,7 @@ class MainWindow(QMainWindow):
     # ── Main area ─────────────────────────────────────────────────────────────
 
     def _build_main_area(self) -> QWidget:
-        widget = QWidget()
+        widget = _BgWidget()
         lay = QVBoxLayout(widget)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(8)
