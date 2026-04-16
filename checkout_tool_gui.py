@@ -5,6 +5,7 @@ checkout_tool_gui.py — Phoenix Valve Checkout Tool
 from __future__ import annotations
 
 import os
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -15,7 +16,7 @@ from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateEdit, QDialog,
     QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
-    QPlainTextEdit, QPushButton, QScrollArea, QSplitter,
+    QPlainTextEdit, QPushButton, QScrollArea, QSpinBox, QSplitter,
     QTabWidget, QTableWidget, QTableWidgetItem, QTreeWidget,
     QTreeWidgetItem, QVBoxLayout, QWidget,
 )
@@ -283,6 +284,131 @@ class NewCheckoutDialog(QDialog):
         )
 
 
+class BatchCheckoutDialog(QDialog):
+    """
+    Create multiple checkout sheets at once by incrementing a trailing number
+    in the valve tag.  E.g. base tag "MAV-1-100", count 20 →
+    MAV-1-100 … MAV-1-119 (all sharing technician, description, date).
+    """
+
+    def __init__(self, job: Job, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self._job = job
+        self.setWindowTitle(f"Batch Add Checkouts  \u2014  {_job_label(job)}")
+        self.setModal(True)
+        self.resize(480, 260)
+
+        self._valve_tag   = QLineEdit()
+        self._valve_tag.setPlaceholderText("e.g. MAV-1-100")
+        self._count = QSpinBox()
+        self._count.setRange(2, 500)
+        self._count.setValue(10)
+        self._technician  = QLineEdit()
+        self._description = QLineEdit()
+        self._date = QDateEdit(QDate.currentDate())
+        self._date.setCalendarPopup(True)
+        self._date.setDisplayFormat("yyyy-MM-dd")
+
+        self._preview = QLabel("")
+        self._preview.setStyleSheet("color: #487cff; font-size: 10pt;")
+        self._preview.setWordWrap(True)
+
+        form = QFormLayout()
+        form.addRow("Starting Tag *", self._valve_tag)
+        form.addRow("Count *",        self._count)
+        form.addRow("Technician",     self._technician)
+        form.addRow("Description",    self._description)
+        form.addRow("Date",           self._date)
+
+        btns = QDialogButtonBox()
+        btns.addButton(QDialogButtonBox.StandardButton.Ok)
+        btns.addButton(QDialogButtonBox.StandardButton.Cancel)
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+
+        lay = QVBoxLayout(self)
+        lay.addLayout(form)
+        lay.addWidget(self._preview)
+        lay.addWidget(btns)
+
+        self._valve_tag.textChanged.connect(self._update_preview)
+        self._count.valueChanged.connect(self._update_preview)
+        self._update_preview()
+
+    # ── Helpers ───────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _split_tag(tag: str) -> tuple[str, int, int] | None:
+        """
+        Split tag into (prefix, start_number, zero_pad_width).
+        Returns None if the tag has no trailing integer.
+        E.g. "MAV-1-100" → ("MAV-1-", 100, 0)
+             "FH-007"    → ("FH-", 7, 3)
+        """
+        m = re.match(r'^(.*?)(\d+)$', tag)
+        if not m:
+            return None
+        prefix, digits = m.group(1), m.group(2)
+        return prefix, int(digits), len(digits) if digits.startswith("0") else 0
+
+    def _tags(self) -> list[str] | None:
+        raw = self._valve_tag.text().strip()
+        if not raw:
+            return None
+        result = self._split_tag(raw)
+        if result is None:
+            return None
+        prefix, start, pad = result
+        tags = []
+        for i in range(self._count.value()):
+            n = start + i
+            tags.append(f"{prefix}{str(n).zfill(pad) if pad else n}")
+        return tags
+
+    def _update_preview(self) -> None:
+        tags = self._tags()
+        if tags is None:
+            self._preview.setText(
+                "\u26a0  Tag must end with a number (e.g. MAV-1-100)"
+            )
+        else:
+            self._preview.setText(
+                f"\u2713  Will create {len(tags)} sheets:  "
+                f"{tags[0]}  \u2192  {tags[-1]}"
+            )
+
+    # ── Validation & result ───────────────────────────────────────────────────
+
+    def accept(self) -> None:
+        if not self._valve_tag.text().strip():
+            QMessageBox.warning(self, "Required", "Starting Tag is required.")
+            return
+        if self._tags() is None:
+            QMessageBox.warning(self, "Invalid Tag",
+                                "The tag must end with a number so it can be incremented.\n"
+                                "Example: MAV-1-100")
+            return
+        super().accept()
+
+    def get_records(self) -> list[ValveCheckout]:
+        tags = self._tags() or []
+        tech  = self._technician.text().strip()
+        desc  = self._description.text().strip()
+        date  = self._date.date().toString("yyyy-MM-dd")
+        return [
+            ValveCheckout(
+                job_id=self._job.id,
+                valve_tag=tag,
+                project=self._job.job_name,
+                ats_job_number=self._job.job_number,
+                technician=tech,
+                description=desc,
+                date=date,
+            )
+            for tag in tags
+        ]
+
+
 # ── Main window ───────────────────────────────────────────────────────────────
 
 class MainWindow(QMainWindow):
@@ -331,6 +457,10 @@ class MainWindow(QMainWindow):
         new_co_act.setShortcut("Ctrl+N")
         new_co_act.triggered.connect(self._on_new_checkout)
         file_menu.addAction(new_co_act)
+        batch_act = QAction("Batch Add Checkouts\u2026", self)
+        batch_act.setShortcut("Ctrl+B")
+        batch_act.triggered.connect(self._on_batch_add)
+        file_menu.addAction(batch_act)
         file_menu.addSeparator()
         export_act = QAction("Export Selected Checkout\u2026", self)
         export_act.setShortcut("Ctrl+E")
@@ -387,6 +517,14 @@ class MainWindow(QMainWindow):
         btn_row.addWidget(new_job_btn)
         btn_row.addWidget(self._new_checkout_btn)
         lay.addLayout(btn_row)
+
+        batch_btn_row = QHBoxLayout()
+        batch_btn_row.setSpacing(6)
+        self._batch_btn = QPushButton("+ Batch Add")
+        self._batch_btn.clicked.connect(self._on_batch_add)
+        self._batch_btn.setEnabled(False)
+        batch_btn_row.addWidget(self._batch_btn)
+        lay.addLayout(batch_btn_row)
 
         self._tree = QTreeWidget()
         self._tree.setHeaderHidden(True)
@@ -859,10 +997,12 @@ class MainWindow(QMainWindow):
         if current is None:
             self._load_record(None)
             self._new_checkout_btn.setEnabled(False)
+            self._batch_btn.setEnabled(False)
             return
 
         kind, id_ = current.data(0, self._ROLE)
         self._new_checkout_btn.setEnabled(True)
+        self._batch_btn.setEnabled(True)
 
         if kind == "job":
             job = self._store.get_job(id_)
@@ -889,6 +1029,7 @@ class MainWindow(QMainWindow):
 
         if kind == "job":
             add_act = menu.addAction("Add Checkout to Job")
+            batch_act = menu.addAction("Batch Add Checkouts\u2026")
             menu.addSeparator()
             export_job_act = menu.addAction("Export All Checkouts to Excel\u2026")
             menu.addSeparator()
@@ -898,6 +1039,8 @@ class MainWindow(QMainWindow):
                 job = self._store.get_job(id_)
                 if job:
                     self._open_new_checkout_for_job(job)
+            elif action == batch_act:
+                self._batch_add_for_job(id_)
             elif action == export_job_act:
                 self._export_job(id_)
             elif action == del_act:
@@ -930,6 +1073,26 @@ class MainWindow(QMainWindow):
         job = self._store.get_job(job_id)
         if job:
             self._open_new_checkout_for_job(job)
+
+    def _on_batch_add(self) -> None:
+        job_id = self._selected_job_id()
+        if not job_id:
+            QMessageBox.information(self, "No Job Selected",
+                                    "Select a job first, then batch add checkouts.")
+            return
+        self._batch_add_for_job(job_id)
+
+    def _batch_add_for_job(self, job_id: str) -> None:
+        job = self._store.get_job(job_id)
+        if not job:
+            return
+        dlg = BatchCheckoutDialog(job, self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        records = dlg.get_records()
+        for record in records:
+            self._store.add(record)
+        self._refresh_tree(select_id=records[0].id)
 
     def _open_new_checkout_for_job(self, job: Job) -> None:
         dlg = NewCheckoutDialog(job, self)
