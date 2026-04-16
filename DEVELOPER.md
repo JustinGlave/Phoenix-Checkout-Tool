@@ -1,13 +1,11 @@
 # DEVELOPER.md — Phoenix Valve Checkout Tool
 
-This project uses the same design system, build pipeline, and auto-updater as the
-**Project Tracking Tool** (github.com/JustinGlave/project-tracking-tool).
-
 ---
 
 ## Tech Stack
 
 - **Python 3** with **PySide6** (Qt for Python) for the UI
+- **openpyxl** for template-based Excel export
 - **PyInstaller** (`--onedir --windowed`) to package as a Windows exe
 - **Inno Setup 6** to build the installer (`installer.iss`)
 - **GitHub Releases** for distribution and auto-updates (`updater.py`)
@@ -17,14 +15,16 @@ This project uses the same design system, build pipeline, and auto-updater as th
 ## File Structure
 
 ```
-checkout_tool_gui.py      — Main UI
-checkout_tool_backend.py  — Data and storage logic (ValveCheckout / CheckoutStore)
-updater.py                — Auto-update system (GITHUB_REPO = Phoenix-Checkout-Tool)
+checkout_tool_gui.py      — Main UI (MainWindow, dialogs, themes)
+checkout_tool_backend.py  — Data model and storage (Job / ValveCheckout / CheckoutStore)
+checkout_export.py        — Excel export engine (template-based via openpyxl)
+updater.py                — Auto-update system
 version.py                — Version number (bump before every release)
 build.bat                 — Builds exe + installer + zips
 installer.iss             — Inno Setup installer script
-PTT_Normal.ico            — App icon
-PTT_Transparent.png       — Watermark/logo
+checkout_template.xlsx    — Bundled Excel template
+PTT_Normal_green.ico      — App icon (exe + installer)
+PTT_Transparent_green.png — Watermark / background logo
 ```
 
 ---
@@ -32,126 +32,90 @@ PTT_Transparent.png       — Watermark/logo
 ## Data Model
 
 ### Job
-- `id` — unique UUID
-- `job_number` — ATS job number string
-- `job_name` — project/job name string
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | str | UUID |
+| `job_number` | str | ATS job number |
+| `job_name` | str | Project / job name |
+| `archived` | bool | `True` = shown in archived section, not active |
 
 ### ValveCheckout
-- `id` — unique UUID
-- `job_id` — parent `Job.id`
-- `valve_tag` — valve tag / identifier (shown in sidebar)
-- `project`, `ats_job_number`, `technician`, `description`, `model`, `date`
-- `pass_fail` — `"Pass"` | `"Fail"` | `""`
-- `emer_min`, `valve_min_sp`, `valve_max_sp` — CFM setpoints
-- `wiring` — dict of checkbox states (`p_{i}_{i|w}` for Phoenix, `b_{i}_{i|w}` for Black Box)
-- `sash_sensor_mounted` — bool
-- `config` — dict of `{key}_cfm` and `{key}_notes` for each CONFIG_ROWS entry
-- `verification` — dict of `{key}_result` and `{key}_notes` for each VERIFY_ROWS entry
-- `notes` — free-form notes string
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | str | UUID |
+| `job_id` | str | Parent `Job.id` |
+| `valve_tag` | str | Valve identifier, shown in sidebar |
+| `project`, `ats_job_number`, `technician`, `description`, `model`, `date` | str | Header fields |
+| `pass_fail` | str | `"Pass"` or `"Fail"` or `""` |
+| `emer_min`, `valve_min_sp`, `valve_max_sp` | str | CFM setpoints |
+| `wiring` | dict | `p_{i}_{i/w}` = Phoenix rows, `b_{i}_{i/w}` = Black Box rows |
+| `sash_sensor_mounted` | bool | Sash sensor mounting checkbox |
+| `config` | dict | `{key}_cfm` and `{key}_notes` for each CONFIG_ROWS entry |
+| `verification` | dict | `{key}_result` and `{key}_notes` for each VERIFY_ROWS entry |
+| `notes` | str | Free-form notes |
 
-Data is stored at `%APPDATA%\ATS Inc\Phoenix Valve Checkout Tool\data.json`.
+Data is persisted at `%APPDATA%\ATS Inc\Phoenix Valve Checkout Tool\data.json`.
+
+---
+
+## Main UI Structure
+
+```
+QMainWindow
+└── Central QWidget (QHBoxLayout)
+    ├── Sidebar (fixed 270px)
+    │   ├── + New Job / + New Checkout buttons
+    │   ├── + Batch Add button
+    │   └── QTreeWidget
+    │       ├── Active jobs (bold) with checkout children
+    │       └── Archived Jobs separator + archived job entries (gray italic)
+    └── Main area (_BgWidget — floating logo watermark)
+        ├── QStackedWidget
+        │   ├── Page 0: Welcome / instructions panel (startup / nothing selected)
+        │   ├── Page 1: Header panel + tab widget (checkout editor)
+        │   └── Page 2: Archived job summary panel (read-only list of checkouts)
+        └── Update banner (hidden until update available)
+```
+
+### Stack page switching
+| Condition | Page |
+|-----------|------|
+| Nothing selected / tree empty | 0 - Welcome |
+| Active job selected | 1 - Checkout editor (tabs disabled) |
+| Checkout selected | 1 - Checkout editor (tabs enabled) |
+| Archived job selected | 2 - Archived job summary |
 
 ---
 
 ## Design System
 
 ### Accent Color
-`#487cff` — used for selection highlights, hover states, menu item hover, and the install button.
+`#487cff` — selection highlights, hover states, numbered badges.
 
 ### Font
-`Segoe UI, Arial, sans-serif` at `11pt` base. All widgets inherit this.
+`Segoe UI, Arial, sans-serif` at `11pt` base.
 
 ### Themes
-Two themes toggled via **View → Dark Mode**. Preference saved in `QSettings`.
-
-Both themes use the **Fusion** Qt style as a base, then override the palette
-and apply a full QSS stylesheet.
-
-#### Dark Theme palette (key values)
-| Role | Value |
-|------|-------|
-| Window | `#1c1c1c` |
-| Base (inputs/lists) | `#121212` |
-| Button | `#2d2d2d` |
-| Text | `#e6e6e6` |
-| Highlight | `#487cff` |
-
-#### Light Theme palette (key values)
-| Role | Value |
-|------|-------|
-| Window | `rgb(210, 212, 218)` |
-| Base (inputs/lists) | `rgb(225, 227, 232)` |
-| Button | `rgb(195, 198, 206)` |
-| Text | `rgb(25, 25, 25)` |
-| Highlight | `#487cff` |
-
-### Widget Styling Conventions
-| Widget | Style |
-|--------|-------|
-| Panels / cards | `border-radius: 14px`, semi-transparent background, 1px border |
-| Buttons | `border-radius: 10px`, `padding: 6px 16px` |
-| Inputs | `border-radius: 10px`, `padding: 8px` |
-| Tables / lists | `border-radius: 10px`, transparent background |
-| List items | `border-radius: 10px`, `padding: 10px`, `margin: 2px 0` |
+Two themes toggled via **View > Dark Mode**, saved in `QSettings("ATS Inc", APP_NAME)`.
+Both use the **Fusion** Qt style, then override the palette and apply a full QSS stylesheet.
 
 ### Named Widget IDs (setObjectName)
-| Name | Used for |
-|------|----------|
+| Name | Purpose |
+|------|---------|
 | `Panel` | Section containers / cards |
-| `StatCard` | Small stat display cards |
 | `ProjectTitle` | 14pt bold heading |
 | `ProjectSubtitle` | 10pt muted subtitle |
 | `SectionTitle` | 12pt section heading |
-| `StatTitle` | 7pt muted label above a stat value |
-| `StatValue` | 10pt bold stat value |
-| `MetaCaption` | 9pt bold field label |
-| `MetaValue` | 9pt field value |
-| `ResizeHandle` | Drag handle between panels |
-| `UpdateBanner` | Auto-update banner at bottom of window |
-| `UpdateMsg` | Label inside the update banner |
-| `InstallBtn` | Green install button inside update banner |
-
----
-
-## Layout Pattern
-
-```
-QMainWindow
-└── Central QWidget (QHBoxLayout)
-    ├── Left sidebar (QListWidget, fixed ~220px width)
-    │   ├── "+ New Checkout" button at top
-    │   └── Checkout record list
-    └── Right main area (QWidget, stretch)
-        ├── Header area (valve tag title, meta fields)
-        ├── Content area (checkout details / table)
-        └── Update banner (hidden until update available)
-```
-
----
-
-## Path Helpers
-
-```python
-def _resource_path(filename: str) -> str:
-    """Path to a bundled asset. Works from source and exe."""
-    if getattr(sys, "frozen", False):
-        base = Path(getattr(sys, "_MEIPASS", ""))
-    else:
-        base = Path(__file__).parent
-    return str(base / filename)
-
-def _app_data_path(filename: str) -> str:
-    """Path to user data in %APPDATA%\\ATS Inc\\Phoenix Valve Checkout Tool\\."""
-    base = Path(os.environ.get("APPDATA", Path.home())) / "ATS Inc" / "Phoenix Valve Checkout Tool"
-    base.mkdir(parents=True, exist_ok=True)
-    return str(base / filename)
-```
+| `UpdateBanner` | Auto-update banner |
+| `UpdateMsg` | Label inside update banner |
+| `InstallBtn` | Green install button |
+| `RestoreBtn` | Amber restore button on archived job panel |
 
 ---
 
 ## Auto-Updater
 
-`updater.py` is pre-configured for this repo:
+`updater.py` checks this repo's releases on startup:
 ```python
 GITHUB_OWNER   = "JustinGlave"
 GITHUB_REPO    = "Phoenix-Checkout-Tool"
@@ -159,20 +123,22 @@ ZIP_ASSET_NAME = "PhoenixCheckoutTool.zip"
 EXE_NAME       = "PhoenixCheckoutTool.exe"
 ```
 
+The zip must contain only the exe (not the full folder). `build.bat` produces this correctly.
+
 ---
 
 ## Build & Release Workflow
 
-1. Edit code
-2. Bump version in `version.py`
-3. Run `build.bat` — produces:
-   - `dist\PhoenixCheckoutTool\PhoenixCheckoutTool.exe` — test this first
-   - `dist\PhoenixCheckoutToolSetup.exe` — installer for new users
-   - `dist\PhoenixCheckoutTool.zip` — auto-updater asset
-4. Test the exe and installer
-5. `git add . && git commit -m "v1.x.x - description" && git push`
-6. `gh release create v1.x.x --title "v1.x.x" --notes "..."`
-7. `gh release upload v1.x.x dist/PhoenixCheckoutToolSetup.exe dist/PhoenixCheckoutTool.zip`
+1. Edit code and test manually
+2. Bump `version.py`
+3. Commit and push: `git add . && git commit -m "..." && git push`
+4. Run `build.bat`
+5. Test `dist\PhoenixCheckoutTool\PhoenixCheckoutTool.exe`
+6. Create GitHub release and upload assets:
+   ```
+   gh release create v1.x.x --title "v1.x.x" --notes "Release notes here"
+   gh release upload v1.x.x dist/PhoenixCheckoutToolSetup.exe dist/PhoenixCheckoutTool.zip dist/PhoenixCheckoutTool_FullInstall.zip
+   ```
 
 ---
 
@@ -180,5 +146,5 @@ EXE_NAME       = "PhoenixCheckoutTool.exe"
 
 - `PrivilegesRequired=lowest` — no admin required
 - Installs to `{localappdata}\ATS Inc\Phoenix Valve Checkout Tool\`
-- User data goes to `{userappdata}\ATS Inc\Phoenix Valve Checkout Tool\` (separate from app files)
-- Uninstaller asks whether to delete user data before removing it
+- User data lives in `{userappdata}\ATS Inc\Phoenix Valve Checkout Tool\`
+- Uninstaller prompts before deleting user data
