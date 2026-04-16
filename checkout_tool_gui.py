@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QDate, Qt, QSettings, QThread, QTimer, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QPalette
+from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateEdit, QDialog,
     QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
@@ -111,6 +111,34 @@ def _app_data_path(filename: str) -> str:
     base = Path(os.environ.get("APPDATA", Path.home())) / "ATS Inc" / "Phoenix Valve Checkout Tool"
     base.mkdir(parents=True, exist_ok=True)
     return str(base / filename)
+
+
+class _BgWidget(QWidget):
+    """Central widget that paints the app logo as a semi-transparent watermark."""
+    _OPACITY = 0.06   # 6 % — subtle behind content
+
+    def __init__(self) -> None:
+        super().__init__()
+        path = _resource_path("PTT_Transparent_green.png")
+        self._pixmap = QPixmap(path) if os.path.exists(path) else QPixmap()
+
+    def paintEvent(self, event) -> None:  # type: ignore[override]
+        super().paintEvent(event)
+        if self._pixmap.isNull():
+            return
+        painter = QPainter(self)
+        painter.setOpacity(self._OPACITY)
+        # Scale to fit the shorter dimension, centred
+        size = min(self.width(), self.height())
+        scaled = self._pixmap.scaled(
+            size, size,
+            Qt.AspectRatioMode.KeepAspectRatio,
+            Qt.TransformationMode.SmoothTransformation,
+        )
+        x = (self.width()  - scaled.width())  // 2
+        y = (self.height() - scaled.height()) // 2
+        painter.drawPixmap(x, y, scaled)
+        painter.end()
 
 
 def _centered_checkbox(checked: bool = False, enabled: bool = True) -> tuple[QWidget, QCheckBox]:
@@ -258,7 +286,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(f"{self.APP_NAME} \u2014 v{__version__}")
         self.resize(1380, 840)
 
-        icon_path = _resource_path("PTT_Normal.ico")
+        icon_path = _resource_path("PTT_Normal_green.ico")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
 
@@ -311,7 +339,7 @@ class MainWindow(QMainWindow):
     # ── Top-level layout ──────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
-        root = QWidget()
+        root = _BgWidget()
         root_lay = QHBoxLayout(root)
         root_lay.setContentsMargins(8, 8, 8, 8)
         root_lay.setSpacing(8)

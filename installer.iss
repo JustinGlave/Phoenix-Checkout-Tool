@@ -21,7 +21,7 @@ DisableProgramGroupPage=yes
 ; Output
 OutputDir=dist
 OutputBaseFilename=PhoenixCheckoutToolSetup
-SetupIconFile=PTT_Normal.ico
+SetupIconFile=PTT_Normal_green.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 UninstallDisplayName={#MyAppName}
 

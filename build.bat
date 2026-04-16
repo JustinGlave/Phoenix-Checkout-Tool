@@ -10,7 +10,7 @@
 :: ── APP SETTINGS ─────────────────────────────────────────────
 set APP_NAME=PhoenixCheckoutTool
 set APP_MAIN=checkout_tool_gui.py
-set APP_ICON=PTT_Normal.ico
+set APP_ICON=PTT_Normal_green.ico
 :: ─────────────────────────────────────────────────────────────
 
 :: Read version from version.py
@@ -29,6 +29,8 @@ pyinstaller ^
     --icon=%APP_ICON% ^
     --name=%APP_NAME% ^
     --add-data="%APP_ICON%;." ^
+    --add-data="PTT_Transparent_green.png;." ^
+    --add-data="checkout_template.xlsx;." ^
     --collect-all=PySide6 ^
     %APP_MAIN%
 
