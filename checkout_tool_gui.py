@@ -47,10 +47,10 @@ PHOENIX_WIRING: list[tuple] = [
     ("TB2 \u2014 OUTPUTS",                                         6, "AO-2",                 "",                               False),
     ("TB2 \u2014 OUTPUTS",                                         7, "GROUND",               "",                               False),
     ("TB3 \u2014 INTERNAL  (Factory Wired \u2014 Do Not Modify)",  1, "RED / VPOT",           "Valve Position Feedback",        True),
-    ("TB3 \u2014 INTERNAL  (Factory Wired \u2014 Do Not Modify)",  2, "GREEN / VPOT",         "",                               True),
-    ("TB3 \u2014 INTERNAL  (Factory Wired \u2014 Do Not Modify)",  3, "BLACK / VPOT",         "",                               True),
+    ("TB3 \u2014 INTERNAL  (Factory Wired \u2014 Do Not Modify)",  2, "GREEN / VPOT",         "Valve Position Feedback",        True),
+    ("TB3 \u2014 INTERNAL  (Factory Wired \u2014 Do Not Modify)",  3, "BLACK / VPOT",         "Valve Position Feedback",        True),
     ("TB3 \u2014 INTERNAL  (Factory Wired \u2014 Do Not Modify)",  4, "PRESSURE SW (R)",      "Pressure Switch Dry Contact",    True),
-    ("TB3 \u2014 INTERNAL  (Factory Wired \u2014 Do Not Modify)",  5, "PRESSURE SW (B)",      "",                               True),
+    ("TB3 \u2014 INTERNAL  (Factory Wired \u2014 Do Not Modify)",  5, "PRESSURE SW (B)",      "Pressure Switch Dry Contact",    True),
     ("TB4 \u2014 POWER",                                           1, "L1 HOT",               "24 VAC",                         False),
     ("TB4 \u2014 POWER",                                           2, "L2 COMMON",            "24 VAC",                         False),
     ("TB4 \u2014 POWER",                                           3, "GROUND",               "",                               False),
@@ -72,6 +72,141 @@ BB_WIRING: list[tuple] = [
     ("FHM Sentry \u2014 Fume Hood Monitor",        2, "B  (BLU)",  "LON Network-2",                   False),
     ("FHM Sentry \u2014 Fume Hood Monitor",        3, "L1 +",      "24 VAC",                          False),
     ("FHM Sentry \u2014 Fume Hood Monitor",        4, "L2 \u2212", "24 VAC",                          False),
+]
+
+# ── CSCP ACM (Actuator Control Module) wiring ─────────────────────────────────
+ACM_WIRING: list[tuple] = [
+    ("Connector/Terminal P10",   1, "EGND (Jumper \u2192 Pin 2)", "Main Power Input",          False),
+    ("Connector/Terminal P10",   2, "V0 (Jumper \u2192 Pin 1)",   "",                          False),
+    ("Connector/Terminal P10",   3, "+24VAC",                      "",                          False),
+    ("Connector/Terminal P20",   4, "M1",                          "Actuator Output",           True),
+    ("Connector/Terminal P20",   5, "M2",                          "",                          True),
+    ("Connector/Terminal P30",  13, "NC or Not Used",              "DP Sensor",                 True),
+    ("Connector/Terminal P30",  14, "+3V3",                        "",                          True),
+    ("Connector/Terminal P30",  15, "Ground",                      "",                          True),
+    ("Connector/Terminal P30",  16, "Analog Input",                "",                          True),
+    ("Connector/Terminal P40",  18, "DA+",                         "T1L Port A",                False),
+    ("Connector/Terminal P40",  19, "DA\u2212",                    "",                          False),
+    ("Connector/Terminal P40",  20, "EGND",                        "",                          False),
+    ("Connector/Terminal P50",  21, "DA+",                         "T1L Port B",                False),
+    ("Connector/Terminal P50",  22, "DA\u2212",                    "",                          False),
+    ("Connector/Terminal P50",  23, "EGND",                        "",                          False),
+    ("Connector/Terminal P60",  24, "D\u2212",                     "RS485",                     False),
+    ("Connector/Terminal P60",  25, "D+",                          "",                          False),
+    ("Connector/Terminal P60",  26, "COM (GND)",                   "",                          False),
+    ("Connector/Terminal P70",  27, "UIO_1  (Sash RED)",           "UIO 1 & 2",                 False),
+    ("Connector/Terminal P70",  28, "GND  (Sash BLACK)",           "",                          False),
+    ("Connector/Terminal P70",  29, "UIO_2",                       "",                          False),
+    ("Connector/Terminal P70",  30, "GND",                         "",                          False),
+    ("Connector/Terminal P80",  27, "5V",                          "Vpot",                      True),
+    ("Connector/Terminal P80",  28, "VPOT",                        "",                          True),
+    ("Connector/Terminal P80",  29, "GND",                         "",                          True),
+]
+
+# ── CSCP DHV Black Box wiring ──────────────────────────────────────────────────
+DHV_BB_WIRING: list[tuple] = [
+    ("TB1 \u2014 POWER IN",    1, "L1 +",          "24 VAC",                              False),
+    ("TB1 \u2014 POWER IN",    2, "GROUND",         "",                                    False),
+    ("TB1 \u2014 POWER IN",    3, "L2 \u2212",      "24 VAC",                              False),
+    ("TB2 \u2014 OUTPUTS",     1, "V OUT",           "Lands on Pin 27 on Phoenix Valve",    False),
+    ("TB2 \u2014 OUTPUTS",     2, "Ground",          "Lands on Pin 28 on Phoenix Valve",    False),
+    ("TB3 \u2014 INPUTS",      1, "IN-1 +",          "Vertical Sash Sensor",                False),
+    ("TB3 \u2014 INPUTS",      2, "IN-1 \u2212",     "Vertical Sash Sensor",                False),
+    ("TB3 \u2014 INPUTS",      3, "24 VAC POWER",    "",                                    False),
+    ("TB3 \u2014 INPUTS",      4, "HOT",             "",                                    False),
+    ("TB3 \u2014 INPUTS",      5, "GND",             "",                                    False),
+    ("UIO 1",                  1, "Signal",           "",                                    False),
+    ("UIO 1",                  2, "GND",              "",                                    False),
+    ("UIO 2",                  1, "Signal",           "",                                    False),
+    ("UIO 2",                  2, "GND",              "",                                    False),
+    ("UI 1",                   1, "Signal",           "",                                    False),
+    ("UI 1",                   2, "GND",              "",                                    False),
+    ("UI 2",                   1, "Signal",           "",                                    False),
+    ("UI 2",                   2, "GND",              "",                                    False),
+    ("DO SWITCH",              1, "DO +",             "",                                    False),
+    ("DO SWITCH",              2, "DO \u2212",        "",                                    False),
+    ("MSTP",                   1, "RS485 +",          "",                                    False),
+    ("MSTP",                   2, "RS485 \u2212",     "",                                    False),
+]
+
+# ── CSCP PBC Room wiring — left panel (TB1 INPUTS / DO Relay / DO SSR / UIO) ──
+PBC_WIRING_LEFT: list[tuple] = [
+    ("TB1 \u2014 24V Power",    1, "Bldg Earth GND",  "Building Earth Ground",          False),
+    ("TB1 \u2014 24V Power",    2, "V0",               "24 VAC/VDC",                     False),
+    ("TB1 \u2014 24V Power",    3, "24 VAC/VDC",       "",                               False),
+    ("DO Relay",                4, "NC1",               "Normally Closed 1",              False),
+    ("DO Relay",                5, "NO1",               "Normally Open 1",                False),
+    ("DO Relay",                6, "IN1",               "Input Power 1",                  False),
+    ("DO Relay",                7, "NC2",               "Normally Closed 2",              False),
+    ("DO Relay",                8, "NO2",               "Normally Open 2",                False),
+    ("DO Relay",                9, "IN2",               "Input Power 2",                  False),
+    ("DO Relay",               10, "NC3",               "Normally Closed 3",              False),
+    ("DO Relay",               11, "NO3",               "Normally Open 3",                False),
+    ("DO Relay",               12, "IN3",               "Input Power 3",                  False),
+    ("DO Relay",               13, "NC4",               "Normally Closed 4",              False),
+    ("DO Relay",               14, "NO4",               "Normally Open 4",                False),
+    ("DO Relay",               15, "IN4",               "Input Power 4",                  False),
+    ("DO SSR",                 16, "AUX OUT",           "24 VAC/VDC Auxiliary Output",    False),
+    ("DO SSR",                 17, "SRIN",              "24 VAC/VDC Aux Input",           True),
+    ("DO SSR",                 18, "SR1",               "SSR1 Output",                    False),
+    ("DO SSR",                 19, "C",                 "Common",                         False),
+    ("DO SSR",                 20, "SR2",               "SSR2 Output",                    False),
+    ("DO SSR",                 21, "SR3",               "SSR3 Output",                    False),
+    ("DO SSR",                 22, "C",                 "Common",                         False),
+    ("DO SSR",                 23, "SR4",               "SSR4 Output",                    False),
+    ("I/O",                    24, "???",               "",                               False),
+    ("I/O",                    25, "???",               "",                               False),
+    ("I/O",                    26, "???",               "",                               False),
+    ("I/O",                    27, "???",               "",                               False),
+    ("I/O",                    28, "???",               "",                               False),
+    ("I/O",                    29, "???",               "",                               False),
+    ("I/O",                    30, "???",               "",                               False),
+    ("I/O",                    31, "???",               "",                               False),
+    ("UIO",                    32, "IO13",              "Universal Input/Output 13",       False),
+    ("UIO",                    33, "C",                 "Common",                         False),
+    ("UIO",                    34, "IO14",              "Universal Input/Output 14",       False),
+    ("UIO",                    35, "IO15",              "Universal Input/Output 15",       False),
+    ("UIO",                    36, "C",                 "Common",                         False),
+    ("UIO",                    37, "IO16",              "Universal Input/Output 16",       False),
+    ("UIO",                    38, "24 VDC OUT",        "Auxiliary Power Output",          False),
+]
+
+# ── CSCP PBC Room wiring — right panel (Power / Comm / UIO) ───────────────────
+PBC_WIRING_RIGHT: list[tuple] = [
+    ("TB1 \u2014 POWER IN",    39, "???",               "",                               False),
+    ("TB1 \u2014 POWER IN",    40, "???",               "",                               False),
+    ("TB1 \u2014 POWER IN",    41, "???",               "",                               False),
+    ("BACnet MS/TP",           42, "+",                 "BACnet MS/TP Positive",           False),
+    ("BACnet MS/TP",           43, "\u2212",            "BACnet MS/TP Negative",           False),
+    ("BACnet MS/TP",           44, "SHLD",              "BACnet MS/TP Shield",             False),
+    ("RS485",                  45, "+",                 "RS485 Modbus Positive",           False),
+    ("RS485",                  46, "\u2212",            "RS485 Modbus Negative",           False),
+    ("RS485",                  47, "COM",               "Shield Termination",              False),
+    ("Power 24",               48, "24 VAC",            "24 VAC Power Input Voltage",      False),
+    ("Power 24",               49, "V0",                "24 VAC Power Input Voltage",      False),
+    ("SYLK Bus",               50, "WM1",               "Sylk Bus",                        False),
+    ("SYLK Bus",               51, "WM2",               "Sylk Bus",                        False),
+    ("UIO",                    52, "IO1",               "Universal Input/Output 1",        False),
+    ("UIO",                    53, "C",                 "Common",                          False),
+    ("UIO",                    54, "IO2",               "Universal Input/Output 2",        False),
+    ("UIO",                    55, "IO3",               "Universal Input/Output 3",        False),
+    ("UIO",                    56, "C",                 "Common",                          False),
+    ("UIO",                    57, "IO4",               "Universal Input/Output 4",        False),
+    ("UIO",                    58, "IO5",               "Universal Input/Output 5",        False),
+    ("UIO",                    59, "C",                 "Common",                          False),
+    ("UIO",                    60, "IO6",               "Universal Input/Output 6",        False),
+    ("UIO",                    61, "IO7",               "Universal Input/Output 7",        False),
+    ("UIO",                    62, "C",                 "Common",                          False),
+    ("UIO",                    63, "IO8",               "Universal Input/Output 8",        False),
+    ("UIO",                    64, "C",                 "Common",                          False),
+    ("UIO",                    65, "23 VDC OUT",        "Auxiliary Power Output",          False),
+    ("UIO",                    66, "IO9",               "Universal Input/Output 9",        False),
+    ("UIO",                    67, "C",                 "Common",                          False),
+    ("UIO",                    68, "IO10",              "Universal Input/Output 10",       False),
+    ("UIO",                    69, "IO11",              "Universal Input/Output 11",       False),
+    ("UIO",                    70, "C",                 "Common",                          False),
+    ("UIO",                    71, "IO12",              "Universal Input/Output 12",       False),
+    ("UIO",                    72, "24 VDC OUT",        "Auxiliary Power Output",          False),
 ]
 
 CONFIG_ROWS: list[tuple[str, str]] = [
@@ -482,6 +617,29 @@ class MainWindow(QMainWindow):
         self._dark_mode_action.triggered.connect(self._toggle_dark_mode)
         view_menu.addAction(self._dark_mode_action)
 
+        tools_menu = mb.addMenu("Tools")
+        test_act = QAction("Create Test Data", self)
+        test_act.triggered.connect(self._create_test_data)
+        tools_menu.addAction(test_act)
+
+        _POINTS_LISTS_DIR = (
+            r"C:\Users\justing\OneDrive - ATS\Desktop\Templates and Submittals\Points lists"
+        )
+        _POINTS_FILES = [
+            ("ACM Points List",  "ACM Points list.xlsx"),
+            ("FHD500 Points List", "FHD500 Points list.xlsx"),
+            ("PBC Points List",  "PBC Points list.xlsx"),
+            ("RPI Points List",  "RPI Points list.xlsx"),
+        ]
+        pl_menu = tools_menu.addMenu("Points Lists")
+        for _title, _fname in _POINTS_FILES:
+            _path = os.path.join(_POINTS_LISTS_DIR, _fname)
+            act = QAction(_title, self)
+            act.triggered.connect(
+                lambda checked=False, p=_path, t=_title: self._open_points_list(p, t)
+            )
+            pl_menu.addAction(act)
+
         help_menu = mb.addMenu("Help")
         about_act = QAction(f"About {self.APP_NAME}", self)
         about_act.triggered.connect(self._show_about)
@@ -545,7 +703,8 @@ class MainWindow(QMainWindow):
         outer_lay.setContentsMargins(0, 0, 0, 0)
         outer_lay.setSpacing(8)
 
-        # Page 0: welcome  |  Page 1: checkout editor  |  Page 2: archived job summary
+        # Page 0: welcome  |  Page 1: checkout editor
+        # Page 2: archived job summary  |  Page 3: active job summary
         self._main_stack = QStackedWidget()
         self._main_stack.addWidget(self._build_welcome_panel())  # index 0
 
@@ -558,6 +717,7 @@ class MainWindow(QMainWindow):
         self._main_stack.addWidget(content_widget)               # index 1
 
         self._main_stack.addWidget(self._build_archived_panel()) # index 2
+        self._main_stack.addWidget(self._build_job_panel())      # index 3
 
         outer_lay.addWidget(self._main_stack, stretch=1)
 
@@ -792,6 +952,149 @@ class MainWindow(QMainWindow):
         if job_id:
             self._restore_job(job_id)
 
+    # ── Active job summary panel (page 3) ─────────────────────────────────────
+
+    def _build_job_panel(self) -> QWidget:
+        """Summary view shown when an active job is selected."""
+        outer = QWidget()
+        outer_lay = QVBoxLayout(outer)
+        outer_lay.setContentsMargins(0, 0, 0, 0)
+        outer_lay.setSpacing(8)
+
+        hdr = QWidget()
+        hdr.setObjectName("Panel")
+        hdr.setFixedHeight(72)
+        hdr_lay = QHBoxLayout(hdr)
+        hdr_lay.setContentsMargins(20, 10, 20, 10)
+        hdr_lay.setSpacing(20)
+
+        text_col = QVBoxLayout()
+        text_col.setSpacing(2)
+        self._job_hdr_title = QLabel("")
+        self._job_hdr_title.setObjectName("ProjectTitle")
+        self._job_hdr_sub = QLabel("")
+        self._job_hdr_sub.setObjectName("ProjectSubtitle")
+        text_col.addWidget(self._job_hdr_title)
+        text_col.addWidget(self._job_hdr_sub)
+        hdr_lay.addLayout(text_col)
+        hdr_lay.addStretch()
+
+        export_btn = QPushButton("Export All\u2026")
+        export_btn.clicked.connect(self._on_export_job)
+        hdr_lay.addWidget(export_btn)
+
+        outer_lay.addWidget(hdr)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QScrollArea.Shape.NoFrame)
+
+        self._job_list_widget = QWidget()
+        self._job_list_layout = QVBoxLayout(self._job_list_widget)
+        self._job_list_layout.setContentsMargins(0, 0, 8, 0)
+        self._job_list_layout.setSpacing(4)
+        self._job_list_layout.addStretch()
+
+        scroll.setWidget(self._job_list_widget)
+        outer_lay.addWidget(scroll, stretch=1)
+        return outer
+
+    def _populate_job_panel(self, job_id: str) -> None:
+        """Fill the active job summary panel for the given job."""
+        job = self._store.get_job(job_id)
+        if not job:
+            return
+
+        self._job_hdr_title.setText(_job_label(job))
+
+        records = self._store.records_for_job(job_id)
+        total  = len(records)
+        passes = sum(1 for r in records if r.pass_fail == "Pass")
+        fails  = sum(1 for r in records if r.pass_fail == "Fail")
+        self._job_hdr_sub.setText(
+            f"{total} checkout{'s' if total != 1 else ''}   \u2022   "
+            f"{passes} passed   \u2022   {fails} failed"
+        )
+
+        # Clear previous rows (keep the trailing stretch)
+        while self._job_list_layout.count() > 1:
+            item = self._job_list_layout.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        if not records:
+            empty_lbl = QLabel("No checkout sheets in this job yet.")
+            empty_lbl.setObjectName("ProjectSubtitle")
+            empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self._job_list_layout.insertWidget(0, empty_lbl)
+            return
+
+        panel = QWidget()
+        panel.setObjectName("Panel")
+        panel_lay = QVBoxLayout(panel)
+        panel_lay.setContentsMargins(16, 12, 16, 12)
+        panel_lay.setSpacing(0)
+
+        title_lbl = QLabel("Checkout Sheets")
+        title_lbl.setObjectName("SectionTitle")
+        panel_lay.addWidget(title_lbl)
+        panel_lay.addSpacing(10)
+
+        for record in records:
+            row = QWidget()
+            row_lay = QHBoxLayout(row)
+            row_lay.setContentsMargins(8, 6, 8, 6)
+            row_lay.setSpacing(12)
+
+            tag_lbl = QLabel(record.valve_tag or "(No Tag)")
+            tag_font = QFont()
+            tag_font.setPointSize(10)
+            tag_lbl.setFont(tag_font)
+            if record.pass_fail == "Pass":
+                tag_lbl.setStyleSheet(f"color: {_PASS_COLOR.name()};")
+            elif record.pass_fail == "Fail":
+                tag_lbl.setStyleSheet(f"color: {_FAIL_COLOR.name()};")
+            row_lay.addWidget(tag_lbl, stretch=1)
+
+            type_lbl = QLabel(record.valve_type or "")
+            type_lbl.setObjectName("ProjectSubtitle")
+            type_lbl.setFixedWidth(80)
+            row_lay.addWidget(type_lbl)
+
+            if record.pass_fail in ("Pass", "Fail"):
+                pf_lbl = QLabel(record.pass_fail.upper())
+                pf_lbl.setFixedWidth(48)
+                pf_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                color = "#2d8a4a" if record.pass_fail == "Pass" else "#c0392b"
+                pf_lbl.setStyleSheet(
+                    f"background:{color}; color:white; border-radius:5px;"
+                    "font-weight:700; font-size:9pt;"
+                )
+                row_lay.addWidget(pf_lbl)
+
+            if record.technician:
+                tech_lbl = QLabel(record.technician)
+                tech_lbl.setObjectName("ProjectSubtitle")
+                tech_lbl.setFixedWidth(120)
+                row_lay.addWidget(tech_lbl)
+
+            if record.date:
+                date_lbl = QLabel(record.date)
+                date_lbl.setObjectName("ProjectSubtitle")
+                date_lbl.setFixedWidth(90)
+                date_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                row_lay.addWidget(date_lbl)
+
+            panel_lay.addWidget(row)
+
+            if record is not records[-1]:
+                sep = QWidget()
+                sep.setFixedHeight(1)
+                sep.setStyleSheet("background: rgba(128,128,128,60);")
+                panel_lay.addWidget(sep)
+
+        self._job_list_layout.insertWidget(0, panel)
+
     # ── Header panel ─────────────────────────────────────────────────────────
 
     def _build_header_panel(self) -> QWidget:
@@ -843,7 +1146,8 @@ class MainWindow(QMainWindow):
 
         panel = QWidget()
         panel.setObjectName("Panel")
-        form = QFormLayout(panel)
+        self._general_form = QFormLayout(panel)
+        form = self._general_form
         form.setContentsMargins(24, 18, 24, 18)
         form.setSpacing(12)
         form.setLabelAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
@@ -861,6 +1165,15 @@ class MainWindow(QMainWindow):
         self._f_model        = QLineEdit("CELERIS 2")
         self._f_model.textChanged.connect(self._on_any_change)
 
+        self._f_valve_type = QComboBox()
+        self._f_valve_type.addItems([
+            "Fume Hood", "GEX", "MAV", "Snorkel",
+            "Canopy", "Draw Down Bench", "Gas Cabinet",
+            "CSCP Fume Hood", "PBC Room",
+        ])
+        self._f_valve_type.currentIndexChanged.connect(self._on_any_change)
+        self._f_valve_type.currentTextChanged.connect(self._update_fume_hood_widgets)
+
         self._f_date = QDateEdit(QDate.currentDate())
         self._f_date.setCalendarPopup(True)
         self._f_date.setDisplayFormat("yyyy-MM-dd")
@@ -874,12 +1187,14 @@ class MainWindow(QMainWindow):
         self._f_valve_min_sp = le()
         self._f_valve_max_sp = le()
 
-        form.addRow("Valve Tag #",     self._f_valve_tag)
-        form.addRow("Project",         self._f_project)
+        self._tag_label = QLabel("Valve Tag #")
+        form.addRow(self._tag_label,        self._f_valve_tag)
+        form.addRow("Project",              self._f_project)
         form.addRow("ATS Job Number",  self._f_job_number)
         form.addRow("Technician",      self._f_technician)
         form.addRow("Description",     self._f_description)
         form.addRow("Model",           self._f_model)
+        form.addRow("Valve Type",      self._f_valve_type)
         form.addRow("Date",            self._f_date)
         form.addRow("Pass / Fail",     self._f_pass_fail)
         form.addRow("Emer. Min (CFM)", self._f_emer_min)
@@ -894,25 +1209,57 @@ class MainWindow(QMainWindow):
     # ── Wiring tab ────────────────────────────────────────────────────────────
 
     def _build_wiring_tab(self) -> QWidget:
-        splitter = QSplitter(Qt.Orientation.Horizontal)
-        phoenix_panel, self._phoenix_cbs = self._build_wiring_panel(
-            "PHOENIX AIR VALVE  \u2014  Wiring", PHOENIX_WIRING, sash_sensor=True
-        )
-        bb_panel, self._bb_cbs = self._build_wiring_panel(
-            "BLACK BOX  \u2014  Wiring", BB_WIRING, sash_sensor=False
-        )
-        splitter.addWidget(phoenix_panel)
-        splitter.addWidget(bb_panel)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 1)
-        return splitter
+        self._wiring_stack = QStackedWidget()
+
+        # Page 0: Celeris (Phoenix + Black Box)
+        celeris_spl = QSplitter(Qt.Orientation.Horizontal)
+        self._phoenix_panel, self._phoenix_cbs, self._phoenix_table, self._celeris_sash_cb = \
+            self._build_wiring_panel("PHOENIX AIR VALVE  \u2014  Wiring", PHOENIX_WIRING, sash_sensor=True)
+        self._bb_panel, self._bb_cbs, _, _ = \
+            self._build_wiring_panel("BLACK BOX  \u2014  Wiring", BB_WIRING, sash_sensor=False)
+        celeris_spl.addWidget(self._phoenix_panel)
+        celeris_spl.addWidget(self._bb_panel)
+        celeris_spl.setStretchFactor(0, 1)
+        celeris_spl.setStretchFactor(1, 1)
+        self._wiring_stack.addWidget(celeris_spl)
+
+        # Page 1: CSCP (ACM + DHV Black Box)
+        cscp_spl = QSplitter(Qt.Orientation.Horizontal)
+        self._acm_panel, self._acm_cbs, _, _ = \
+            self._build_wiring_panel("ACTUATOR CONTROL MODULE (ACM)  \u2014  Wiring", ACM_WIRING, sash_sensor=False)
+        self._dhv_panel, self._dhv_cbs, _, self._cscp_sash_cb = \
+            self._build_wiring_panel("DHV BLACK BOX  \u2014  Wiring", DHV_BB_WIRING, sash_sensor=True)
+        cscp_spl.addWidget(self._acm_panel)
+        cscp_spl.addWidget(self._dhv_panel)
+        cscp_spl.setStretchFactor(0, 1)
+        cscp_spl.setStretchFactor(1, 1)
+        self._wiring_stack.addWidget(cscp_spl)
+
+        # Page 2: PBC Room (Left TB1/DO/UIO + Right Power/Comm/UIO)
+        pbc_spl = QSplitter(Qt.Orientation.Horizontal)
+        self._pbc_l_panel, self._pbc_l_cbs, _, _ = \
+            self._build_wiring_panel("CSCP PBC  \u2014  TB1 Inputs / DO Relay / DO SSR / UIO",
+                                     PBC_WIRING_LEFT, sash_sensor=False)
+        self._pbc_r_panel, self._pbc_r_cbs, _, _ = \
+            self._build_wiring_panel("CSCP PBC  \u2014  Power / Comm / UIO",
+                                     PBC_WIRING_RIGHT, sash_sensor=False)
+        pbc_spl.addWidget(self._pbc_l_panel)
+        pbc_spl.addWidget(self._pbc_r_panel)
+        pbc_spl.setStretchFactor(0, 1)
+        pbc_spl.setStretchFactor(1, 1)
+        self._wiring_stack.addWidget(pbc_spl)
+
+        # Start with Celeris sash cb as default active reference
+        self._sash_sensor_cb = self._celeris_sash_cb
+
+        return self._wiring_stack
 
     def _build_wiring_panel(
         self,
         title: str,
         wiring_def: list[tuple],
         sash_sensor: bool,
-    ) -> tuple[QScrollArea, dict]:
+    ) -> tuple[QScrollArea, dict, QTableWidget, Optional["QCheckBox"]]:
         rows: list = []
         current_section = None
         for i, (section, num, point, descriptor, is_factory) in enumerate(wiring_def):
@@ -995,16 +1342,17 @@ class MainWindow(QMainWindow):
         p_lay.addWidget(title_lbl)
         p_lay.addWidget(table, stretch=1)
 
+        sash_cb = None
         if sash_sensor:
-            self._sash_sensor_cb = QCheckBox("Sash Sensor Mounting complete")
-            self._sash_sensor_cb.stateChanged.connect(self._on_any_change)
-            p_lay.addWidget(self._sash_sensor_cb)
+            sash_cb = QCheckBox("Sash Sensor Mounting complete")
+            sash_cb.stateChanged.connect(self._on_any_change)
+            p_lay.addWidget(sash_cb)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
         scroll.setWidget(panel_widget)
-        return scroll, checkboxes
+        return scroll, checkboxes, table, sash_cb
 
     # ── Config & Verification tab ─────────────────────────────────────────────
 
@@ -1062,9 +1410,7 @@ class MainWindow(QMainWindow):
             self._cfg_table.setCellWidget(r_idx, 2, notes_edit)
             self._cfg_notes[key] = notes_edit
 
-        self._cfg_table.setFixedHeight(
-            self._cfg_table.horizontalHeader().height() + len(CONFIG_ROWS) * 42 + 4
-        )
+        self._cfg_row_height = 42
         cfg_lay.addWidget(self._cfg_table)
         v.addWidget(cfg_panel)
 
@@ -1112,9 +1458,7 @@ class MainWindow(QMainWindow):
             self._vfy_table.setCellWidget(r_idx, 2, notes_edit)
             self._vfy_notes[key] = notes_edit
 
-        self._vfy_table.setFixedHeight(
-            self._vfy_table.horizontalHeader().height() + len(VERIFY_ROWS) * 42 + 4
-        )
+        self._vfy_row_height = 42
         vfy_lay.addWidget(self._vfy_table)
         v.addWidget(vfy_panel)
         v.addStretch()
@@ -1286,27 +1630,18 @@ class MainWindow(QMainWindow):
             self._main_stack.setCurrentIndex(2)   # archived summary
             return
 
-        self._main_stack.setCurrentIndex(1)   # checkout editor
-
         if kind == "job":
             self._new_checkout_btn.setEnabled(True)
             self._batch_btn.setEnabled(True)
-            job = self._store.get_job(id_)
-            self._load_record(None)
-            if job:
-                self._hdr_tag.setText(_job_label(job))
-                records = self._store.records_for_job(job.id)
-                total   = len(records)
-                passes  = sum(1 for r in records if r.pass_fail == "Pass")
-                fails   = sum(1 for r in records if r.pass_fail == "Fail")
-                self._hdr_sub.setText(
-                    f"{total} checkout{'s' if total != 1 else ''}   \u2022   "
-                    f"{passes} passed   \u2022   {fails} failed"
-                )
-        else:  # checkout
-            self._new_checkout_btn.setEnabled(True)
-            self._batch_btn.setEnabled(True)
-            self._load_record(self._store.get(id_))
+            self._populate_job_panel(id_)
+            self._main_stack.setCurrentIndex(3)   # active job summary
+            return
+
+        # kind == "checkout"
+        self._main_stack.setCurrentIndex(1)   # checkout editor
+        self._new_checkout_btn.setEnabled(True)
+        self._batch_btn.setEnabled(True)
+        self._load_record(self._store.get(id_))
 
     def _on_tree_context_menu(self, pos) -> None:
         item = self._tree.itemAt(pos)
@@ -1365,6 +1700,344 @@ class MainWindow(QMainWindow):
                 self._delete_checkout(id_)
 
     # ── Actions ───────────────────────────────────────────────────────────────
+
+    def _create_test_data(self) -> None:
+        """Create a test job with 5 varied valve checkouts for export testing."""
+        job = Job(job_number="TEST-001", job_name="Export Test Project")
+        self._store.add_job(job)
+
+        # Shared helpers
+        def pw(indices):  # build wiring dict — both Install and Wired checked
+            w = {}
+            for i in indices:
+                w[f"p_{i}_i"] = True
+                w[f"p_{i}_w"] = True
+            return w
+
+        def bw(indices):  # black-box wiring
+            w = {}
+            for i in indices:
+                w[f"b_{i}_i"] = True
+                w[f"b_{i}_w"] = True
+            return w
+
+        # ── Valve 1: Fume Hood — fully wired, Pass ─────────────────────────
+        r1 = ValveCheckout(
+            job_id=job.id,
+            valve_tag="FH-L1-100",
+            project="Export Test Project",
+            ats_job_number="TEST-001",
+            date="2026-04-16",
+            technician="J. Glave",
+            description="Lab 101 Fume Hood",
+            model="CELERIS 2",
+            valve_type="Fume Hood",
+            pass_fail="Pass",
+            emer_min="150",
+            valve_min_sp="200",
+            valve_max_sp="800",
+            wiring={
+                **pw([0,1,2,3,8,9,10,11,12,20,21,22,23,24]),
+                **bw([0,1,2,3,4,5,6,7,8,9,10]),
+            },
+            sash_sensor_mounted=True,
+            config={
+                "valve_min_cfm": "200",   "valve_min_notes": "Verified at BAS",
+                "valve_max_cfm": "800",   "valve_max_notes": "Verified at BAS",
+                "sched_min_cfm": "175",   "sched_min_notes": "Scheduled setback",
+                "sched_max_cfm": "750",   "sched_max_notes": "",
+                "hood_sash_min_cfm": "180", "hood_sash_min_notes": "Sash @ 12\"",
+                "hood_sash_max_cfm": "760", "hood_sash_max_notes": "Sash fully open",
+            },
+            verification={
+                "face_velocity_result": "Pass",   "face_velocity_notes": "100 FPM @ 18\"",
+                "sash_height_alarm_result": "Pass", "sash_height_alarm_notes": "Alarm @ 18\"",
+                "sash_sensor_output_result": "Pass", "sash_sensor_output_notes": "0-10V confirmed",
+                "low_flow_alarm_result": "Pass",  "low_flow_alarm_notes": "",
+                "jam_alarm_result": "Pass",       "jam_alarm_notes": "",
+                "emergency_exhaust_result": "Pass", "emergency_exhaust_notes": "EE to 800 CFM",
+                "mute_function_result": "Pass",   "mute_function_notes": "10-min mute OK",
+            },
+            notes="All points verified. Sash sensor calibrated on site.\nLON comms confirmed with building controller.",
+        )
+
+        # ── Valve 2: GEX — partially wired, Fail ───────────────────────────
+        r2 = ValveCheckout(
+            job_id=job.id,
+            valve_tag="GEX-2-200",
+            project="Export Test Project",
+            ats_job_number="TEST-001",
+            date="2026-04-16",
+            technician="J. Glave",
+            description="Corridor GEX Valve",
+            model="CELERIS 2",
+            valve_type="GEX",
+            pass_fail="Fail",
+            emer_min="100",
+            valve_min_sp="150",
+            valve_max_sp="600",
+            wiring=pw([0,1,8,9,20,21,22,23,24]),
+            config={
+                "valve_min_cfm": "150", "valve_min_notes": "",
+                "valve_max_cfm": "600", "valve_max_notes": "Max not reached during test",
+                "sched_min_cfm": "120", "sched_min_notes": "",
+                "sched_max_cfm": "550", "sched_max_notes": "",
+            },
+            verification={
+                "low_flow_alarm_result": "Fail", "low_flow_alarm_notes": "Alarm did not trigger — recheck wiring",
+                "jam_alarm_result": "Pass",      "jam_alarm_notes": "",
+            },
+            notes="Low flow alarm failure. Contractor to recheck DO-0 wiring at controller.",
+        )
+
+        # ── Valve 3: MAV — fully wired, Pass ───────────────────────────────
+        r3 = ValveCheckout(
+            job_id=job.id,
+            valve_tag="MAV-3-300",
+            project="Export Test Project",
+            ats_job_number="TEST-001",
+            date="2026-04-16",
+            technician="J. Glave",
+            description="Lab 101 Supply Valve",
+            model="CELERIS 2",
+            valve_type="MAV",
+            pass_fail="Pass",
+            emer_min="",
+            valve_min_sp="100",
+            valve_max_sp="500",
+            wiring=pw([2,3,4,5,8,9,10,11,12,20,21,22,23,24]),
+            config={
+                "valve_min_cfm": "100", "valve_min_notes": "Tracking fume hood",
+                "valve_max_cfm": "500", "valve_max_notes": "",
+                "sched_min_cfm": "80",  "sched_min_notes": "Night setback",
+                "sched_max_cfm": "480", "sched_max_notes": "",
+            },
+            verification={
+                "low_flow_alarm_result": "Pass", "low_flow_alarm_notes": "",
+                "jam_alarm_result": "N/A",       "jam_alarm_notes": "Not applicable for MAV",
+            },
+            notes="Supply valve tracking confirmed against FH-L1-100.",
+        )
+
+        # ── Valve 4: Fume Hood — partial wiring, no pass/fail yet ──────────
+        r4 = ValveCheckout(
+            job_id=job.id,
+            valve_tag="FH-L2-400",
+            project="Export Test Project",
+            ats_job_number="TEST-001",
+            date="2026-04-16",
+            technician="J. Glave",
+            description="Lab 202 Fume Hood",
+            model="CELERIS 2",
+            valve_type="Fume Hood",
+            pass_fail="",
+            emer_min="150",
+            valve_min_sp="200",
+            valve_max_sp="800",
+            wiring={
+                **pw([0,1,20,21,22,23,24]),
+                **bw([0,1,2]),
+            },
+            sash_sensor_mounted=False,
+            config={
+                "valve_min_cfm": "200", "valve_min_notes": "",
+                "valve_max_cfm": "800", "valve_max_notes": "",
+                "sched_min_cfm": "",    "sched_min_notes": "Pending BAS schedule",
+                "sched_max_cfm": "",    "sched_max_notes": "",
+                "hood_sash_min_cfm": "", "hood_sash_min_notes": "Sash sensor not yet mounted",
+                "hood_sash_max_cfm": "", "hood_sash_max_notes": "",
+            },
+            verification={
+                "face_velocity_result": "",      "face_velocity_notes": "Test incomplete",
+                "sash_height_alarm_result": "N/A", "sash_height_alarm_notes": "",
+                "sash_sensor_output_result": "", "sash_sensor_output_notes": "",
+                "low_flow_alarm_result": "Pass", "low_flow_alarm_notes": "",
+                "jam_alarm_result": "Pass",      "jam_alarm_notes": "",
+                "emergency_exhaust_result": "",  "emergency_exhaust_notes": "Pending",
+                "mute_function_result": "",      "mute_function_notes": "",
+            },
+            notes="Wiring partially complete. Sash sensor delivery delayed.\nRevisit scheduled for next week.",
+        )
+
+        # ── Valve 5: GEX — fully wired, Pass ───────────────────────────────
+        r5 = ValveCheckout(
+            job_id=job.id,
+            valve_tag="GEX-5-500",
+            project="Export Test Project",
+            ats_job_number="TEST-001",
+            date="2026-04-16",
+            technician="J. Glave",
+            description="Stockroom GEX Valve",
+            model="CELERIS 2",
+            valve_type="GEX",
+            pass_fail="Pass",
+            emer_min="80",
+            valve_min_sp="120",
+            valve_max_sp="450",
+            wiring=pw([0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,20,21,22,23,24]),
+            config={
+                "valve_min_cfm": "120", "valve_min_notes": "Confirmed",
+                "valve_max_cfm": "450", "valve_max_notes": "Confirmed",
+                "sched_min_cfm": "100", "sched_min_notes": "",
+                "sched_max_cfm": "420", "sched_max_notes": "",
+            },
+            verification={
+                "low_flow_alarm_result": "Pass", "low_flow_alarm_notes": "Triggered at 100 CFM",
+                "jam_alarm_result": "Pass",      "jam_alarm_notes": "Tested twice",
+            },
+            notes="All points verified. Clean install.",
+        )
+
+        def acm(indices):  # ACM wiring — both Install and Wired
+            w = {}
+            for i in indices:
+                w[f"acm_{i}_i"] = True
+                w[f"acm_{i}_w"] = True
+            return w
+
+        def dhv(indices):  # DHV BB wiring — both Install and Wired
+            w = {}
+            for i in indices:
+                w[f"dhv_{i}_i"] = True
+                w[f"dhv_{i}_w"] = True
+            return w
+
+        def pbc_l(indices):  # PBC left wiring
+            w = {}
+            for i in indices:
+                w[f"pbc_l_{i}_i"] = True
+                w[f"pbc_l_{i}_w"] = True
+            return w
+
+        def pbc_r(indices):  # PBC right wiring
+            w = {}
+            for i in indices:
+                w[f"pbc_r_{i}_i"] = True
+                w[f"pbc_r_{i}_w"] = True
+            return w
+
+        # ── Valve 6: CSCP Fume Hood — ACM, fully wired, Pass ──────────────
+        r6 = ValveCheckout(
+            job_id=job.id,
+            valve_tag="ACM-L3-600",
+            project="Export Test Project",
+            ats_job_number="TEST-001",
+            date="2026-04-16",
+            technician="J. Glave",
+            description="Lab 301 CSCP ACM Fume Hood",
+            model="ACM (CSCP)",
+            valve_type="CSCP Fume Hood",
+            pass_fail="Pass",
+            emer_min="120",
+            valve_min_sp="180",
+            valve_max_sp="700",
+            wiring={
+                **acm([0, 1, 2, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21]),
+                **dhv([0, 1, 2, 3, 4, 5, 6, 10, 11, 12, 13, 14, 15, 18, 19, 20, 21]),
+            },
+            sash_sensor_mounted=True,
+            config={
+                "valve_min_cfm": "180",   "valve_min_notes": "Confirmed at BAS",
+                "valve_max_cfm": "700",   "valve_max_notes": "Confirmed at BAS",
+                "sched_min_cfm": "160",   "sched_min_notes": "Night setback",
+                "sched_max_cfm": "660",   "sched_max_notes": "",
+                "hood_sash_min_cfm": "170", "hood_sash_min_notes": "Sash @ 10\"",
+                "hood_sash_max_cfm": "690", "hood_sash_max_notes": "Sash @ 18\"",
+            },
+            verification={
+                "face_velocity_result": "Pass",           "face_velocity_notes": "95 FPM @ 18\"",
+                "sash_height_alarm_result": "Pass",        "sash_height_alarm_notes": "Triggered at 20\"",
+                "sash_sensor_output_result": "Pass",       "sash_sensor_output_notes": "",
+                "low_flow_alarm_result": "Pass",           "low_flow_alarm_notes": "",
+                "jam_alarm_result": "Pass",                "jam_alarm_notes": "",
+                "emergency_exhaust_result": "Pass",        "emergency_exhaust_notes": "Tested from BAS",
+            },
+            notes="CSCP ACM unit. T1L BACnet confirmed. Sash sensor calibrated.",
+        )
+
+        # ── Valve 7: PBC Room — partially wired, Fail ─────────────────────
+        r7 = ValveCheckout(
+            job_id=job.id,
+            valve_tag="PBC-MDF-700",
+            project="Export Test Project",
+            ats_job_number="TEST-001",
+            date="2026-04-16",
+            technician="J. Glave",
+            description="MDF Room PBC Controller",
+            model="PBC (CSCP)",
+            valve_type="PBC Room",
+            pass_fail="Fail",
+            wiring={
+                **pbc_l([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 17, 18, 19, 20, 21, 22]),
+                **pbc_r([3, 4, 5, 6, 7, 8, 9, 10, 13, 14, 15, 16, 17, 18]),
+            },
+            notes="BACnet MS/TP communication not established. Verify address 42 and baud rate. RS485 wiring confirmed.",
+        )
+
+        for r in (r1, r2, r3, r4, r5, r6, r7):
+            self._store.add(r)
+
+        self._refresh_tree(select_id=r1.id)
+        QMessageBox.information(
+            self, "Test Data Created",
+            f"Created job '{job.job_number} — {job.job_name}' with 7 test valve checkouts.",
+        )
+
+    def _open_points_list(self, filepath: str, title: str) -> None:
+        """Open an Excel points list file in a resizable popup table dialog."""
+        import openpyxl
+
+        if not os.path.exists(filepath):
+            QMessageBox.warning(self, "File Not Found", f"Could not find:\n{filepath}")
+            return
+
+        try:
+            wb = openpyxl.load_workbook(filepath, data_only=True)
+            ws = wb.active
+            rows = list(ws.iter_rows(values_only=True))
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"Failed to open file:\n{exc}")
+            return
+
+        if not rows:
+            QMessageBox.information(self, title, "The file appears to be empty.")
+            return
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(title)
+        dlg.resize(900, 600)
+        lay = QVBoxLayout(dlg)
+
+        # Find the column count from the widest row
+        col_count = max(len(r) for r in rows)
+        header_row = rows[0]
+        data_rows = rows[1:]
+
+        tbl = QTableWidget(len(data_rows), col_count, dlg)
+        # Use first row as horizontal header if it looks like labels
+        headers = [str(v) if v is not None else "" for v in header_row]
+        tbl.setHorizontalHeaderLabels(headers)
+        tbl.verticalHeader().setVisible(False)
+        tbl.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        tbl.setAlternatingRowColors(True)
+        tbl.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        tbl.horizontalHeader().setStretchLastSection(True)
+
+        for r_idx, row in enumerate(data_rows):
+            for c_idx in range(col_count):
+                val = row[c_idx] if c_idx < len(row) else None
+                tbl.setItem(r_idx, c_idx, QTableWidgetItem("" if val is None else str(val)))
+
+        lay.addWidget(tbl)
+
+        close_btn = QPushButton("Close")
+        close_btn.clicked.connect(dlg.accept)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_row.addWidget(close_btn)
+        lay.addLayout(btn_row)
+
+        dlg.exec()
 
     def _on_new_job(self) -> None:
         dlg = NewJobDialog(self)
@@ -1556,6 +2229,8 @@ class MainWindow(QMainWindow):
         self._f_technician.setText(record.technician)
         self._f_description.setText(record.description)
         self._f_model.setText(record.model)
+        self._f_valve_type.setCurrentText(record.valve_type or "Fume Hood")
+        self._update_fume_hood_widgets(record.valve_type or "Fume Hood")
         if record.date:
             d = QDate.fromString(record.date, "yyyy-MM-dd")
             if d.isValid():
@@ -1575,9 +2250,26 @@ class MainWindow(QMainWindow):
             cb.blockSignals(True)
             cb.setChecked(w.get(f"b_{idx}_{fld}", False))
             cb.blockSignals(False)
-        self._sash_sensor_cb.blockSignals(True)
-        self._sash_sensor_cb.setChecked(record.sash_sensor_mounted)
-        self._sash_sensor_cb.blockSignals(False)
+        for (idx, fld), cb in self._acm_cbs.items():
+            cb.blockSignals(True)
+            cb.setChecked(w.get(f"acm_{idx}_{fld}", False))
+            cb.blockSignals(False)
+        for (idx, fld), cb in self._dhv_cbs.items():
+            cb.blockSignals(True)
+            cb.setChecked(w.get(f"dhv_{idx}_{fld}", False))
+            cb.blockSignals(False)
+        for (idx, fld), cb in self._pbc_l_cbs.items():
+            cb.blockSignals(True)
+            cb.setChecked(w.get(f"pbc_l_{idx}_{fld}", False))
+            cb.blockSignals(False)
+        for (idx, fld), cb in self._pbc_r_cbs.items():
+            cb.blockSignals(True)
+            cb.setChecked(w.get(f"pbc_r_{idx}_{fld}", False))
+            cb.blockSignals(False)
+        for sash_cb in (self._celeris_sash_cb, self._cscp_sash_cb):
+            sash_cb.blockSignals(True)
+            sash_cb.setChecked(record.sash_sensor_mounted)
+            sash_cb.blockSignals(False)
 
         # Config
         cfg = record.config
@@ -1623,6 +2315,82 @@ class MainWindow(QMainWindow):
             self._hdr_badge.setText("")
             self._hdr_badge.setStyleSheet("")
 
+    # Keys of config/verify rows that are Fume Hood-only
+    _FH_ONLY_CFG  = {"hood_sash_min", "hood_sash_max"}
+    _FH_ONLY_VFY  = {"face_velocity", "sash_height_alarm", "sash_sensor_output",
+                     "emergency_exhaust", "mute_function"}
+
+    # General-tab form row indices for valve-specific SP fields
+    _FORM_ROW_EMER_MIN   = 9
+    _FORM_ROW_VALVE_MIN  = 10
+    _FORM_ROW_VALVE_MAX  = 11
+
+    # Tab indices
+    _TAB_WIRING  = 1
+    _TAB_CFG_VFY = 2
+
+    def _update_fume_hood_widgets(self, valve_type: str) -> None:
+        """Show/hide widgets based on valve type."""
+        fume_hood = valve_type in ("Fume Hood", "CSCP Fume Hood")
+        pbc_room  = valve_type == "PBC Room"
+
+        # ── Tag label ──────────────────────────────────────────────────────────
+        self._tag_label.setText("PBC Tag #" if pbc_room else "Valve Tag #")
+
+        # ── General tab — valve SP fields ─────────────────────────────────────
+        for row_idx in (self._FORM_ROW_EMER_MIN,
+                        self._FORM_ROW_VALVE_MIN,
+                        self._FORM_ROW_VALVE_MAX):
+            self._general_form.setRowVisible(row_idx, not pbc_room)
+
+        cscp_fh    = valve_type == "CSCP Fume Hood"
+        celeris_fh = valve_type == "Fume Hood"
+
+        # ── Tabs ──────────────────────────────────────────────────────────────
+        self._tabs.setTabVisible(self._TAB_WIRING,  True)         # all types have wiring
+        self._tabs.setTabVisible(self._TAB_CFG_VFY, not pbc_room)
+
+        # ── Wiring stack page ─────────────────────────────────────────────────
+        if cscp_fh:
+            self._wiring_stack.setCurrentIndex(1)
+            self._sash_sensor_cb = self._cscp_sash_cb
+        elif pbc_room:
+            self._wiring_stack.setCurrentIndex(2)
+            self._sash_sensor_cb = self._celeris_sash_cb  # PBC has no sash sensor
+        else:
+            self._wiring_stack.setCurrentIndex(0)
+            self._sash_sensor_cb = self._celeris_sash_cb
+
+        # ── Celeris panel visibility (page 0 only) ────────────────────────────
+        self._bb_panel.setVisible(celeris_fh)
+        self._celeris_sash_cb.setVisible(celeris_fh)
+        self._cscp_sash_cb.setVisible(cscp_fh)
+        sash_text = "Sash Open Signal" if celeris_fh else ""
+        for tbl_row in (1, 2):
+            item = self._phoenix_table.item(tbl_row, 2)
+            if item:
+                item.setText(sash_text)
+
+        # ── Config table — hide Fume Hood-only rows and resize ────────────────
+        visible_cfg = 0
+        for r_idx, (key, _) in enumerate(CONFIG_ROWS):
+            hidden = (key in self._FH_ONLY_CFG) and not fume_hood
+            self._cfg_table.setRowHidden(r_idx, hidden)
+            if not hidden:
+                visible_cfg += 1
+        hdr_h = self._cfg_table.horizontalHeader().height()
+        self._cfg_table.setFixedHeight(hdr_h + visible_cfg * self._cfg_row_height + 4)
+
+        # ── Verification table — hide Fume Hood-only rows and resize ──────────
+        visible_vfy = 0
+        for r_idx, (key, _) in enumerate(VERIFY_ROWS):
+            hidden = (key in self._FH_ONLY_VFY) and not fume_hood
+            self._vfy_table.setRowHidden(r_idx, hidden)
+            if not hidden:
+                visible_vfy += 1
+        hdr_h = self._vfy_table.horizontalHeader().height()
+        self._vfy_table.setFixedHeight(hdr_h + visible_vfy * self._vfy_row_height + 4)
+
     def _on_any_change(self) -> None:
         if self._loading or self._current_id is None:
             return
@@ -1642,6 +2410,7 @@ class MainWindow(QMainWindow):
         record.technician     = self._f_technician.text().strip()
         record.description    = self._f_description.text().strip()
         record.model          = self._f_model.text().strip()
+        record.valve_type     = self._f_valve_type.currentText()
         record.date           = self._f_date.date().toString("yyyy-MM-dd")
         record.pass_fail      = self._f_pass_fail.currentText()
         record.emer_min       = self._f_emer_min.text().strip()
@@ -1653,6 +2422,14 @@ class MainWindow(QMainWindow):
             w[f"p_{idx}_{fld}"] = cb.isChecked()
         for (idx, fld), cb in self._bb_cbs.items():
             w[f"b_{idx}_{fld}"] = cb.isChecked()
+        for (idx, fld), cb in self._acm_cbs.items():
+            w[f"acm_{idx}_{fld}"] = cb.isChecked()
+        for (idx, fld), cb in self._dhv_cbs.items():
+            w[f"dhv_{idx}_{fld}"] = cb.isChecked()
+        for (idx, fld), cb in self._pbc_l_cbs.items():
+            w[f"pbc_l_{idx}_{fld}"] = cb.isChecked()
+        for (idx, fld), cb in self._pbc_r_cbs.items():
+            w[f"pbc_r_{idx}_{fld}"] = cb.isChecked()
         record.wiring = w
         record.sash_sensor_mounted = self._sash_sensor_cb.isChecked()
 

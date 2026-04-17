@@ -49,6 +49,7 @@ class ValveCheckout:
     technician:     str = ""
     description:    str = ""
     model:          str = "CELERIS 2"
+    valve_type:     str = "Fume Hood"
     pass_fail:      str = ""   # "Pass" | "Fail" | ""
     emer_min:       str = ""
     valve_min_sp:   str = ""
