@@ -448,8 +448,8 @@ _POINTS_LIST_DATA: dict[str, tuple[list[str], list[tuple]]] = {
 }
 
 # Pass/Fail tree item colors (work on both light and dark backgrounds)
-_PASS_COLOR = QColor(55, 195, 100)
-_FAIL_COLOR = QColor(220, 70,  70)
+_PASS_COLOR = QColor(16, 185, 129)   # #10b981
+_FAIL_COLOR = QColor(239, 68,  68)   # #ef4444
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -669,7 +669,7 @@ class BatchCheckoutDialog(QDialog):
         self._date.setDisplayFormat("yyyy-MM-dd")
 
         self._preview = QLabel("")
-        self._preview.setStyleSheet("color: #487cff; font-size: 10pt;")
+        self._preview.setStyleSheet("color: #3b82f6; font-size: 10pt;")
         self._preview.setWordWrap(True)
 
         form = QFormLayout()
@@ -1001,7 +1001,7 @@ class MainWindow(QMainWindow):
             badge.setFixedSize(38, 38)
             badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
             badge.setStyleSheet(
-                "background:#487cff; color:white; border-radius:19px;"
+                "background:#1e3a8a; color:white; border-radius:19px;"
                 "font-weight:700; font-size:13pt;"
             )
             card_lay.addWidget(badge, alignment=Qt.AlignmentFlag.AlignTop)
@@ -1127,7 +1127,7 @@ class MainWindow(QMainWindow):
                 pf_lbl = QLabel(record.pass_fail.upper())
                 pf_lbl.setFixedWidth(48)
                 pf_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                color = "#2d8a4a" if record.pass_fail == "Pass" else "#c0392b"
+                color = "#10b981" if record.pass_fail == "Pass" else "#ef4444"
                 pf_lbl.setStyleSheet(
                     f"background:{color}; color:white; border-radius:5px;"
                     "font-weight:700; font-size:9pt;"
@@ -2560,13 +2560,13 @@ class MainWindow(QMainWindow):
         if pf == "Pass":
             self._hdr_badge.setText("PASS")
             self._hdr_badge.setStyleSheet(
-                "background:#2d8a4a; color:white; border-radius:8px;"
+                "background:#10b981; color:white; border-radius:8px;"
                 "font-weight:700; font-size:11pt;"
             )
         elif pf == "Fail":
             self._hdr_badge.setText("FAIL")
             self._hdr_badge.setStyleSheet(
-                "background:#c0392b; color:white; border-radius:8px;"
+                "background:#ef4444; color:white; border-radius:8px;"
                 "font-weight:700; font-size:11pt;"
             )
         else:
@@ -2919,81 +2919,31 @@ def apply_dark_theme(app: QApplication) -> None:
     app.setStyle("Fusion")
     palette = QPalette()
     for role, color in [
-        (QPalette.ColorRole.Window,          QColor(28, 28, 28)),
-        (QPalette.ColorRole.WindowText,      QColor(230, 230, 230)),
-        (QPalette.ColorRole.Base,            QColor(18, 18, 18)),
-        (QPalette.ColorRole.AlternateBase,   QColor(35, 35, 35)),
-        (QPalette.ColorRole.ToolTipBase,     QColor(240, 240, 240)),
-        (QPalette.ColorRole.ToolTipText,     QColor(20, 20, 20)),
-        (QPalette.ColorRole.Text,            QColor(230, 230, 230)),
-        (QPalette.ColorRole.Button,          QColor(45, 45, 45)),
-        (QPalette.ColorRole.ButtonText,      QColor(235, 235, 235)),
-        (QPalette.ColorRole.BrightText,      QColor(255, 90, 90)),
-        (QPalette.ColorRole.Highlight,       QColor(72, 124, 255)),
+        (QPalette.ColorRole.Window,          QColor(10, 14, 39)),
+        (QPalette.ColorRole.WindowText,      QColor(255, 255, 255)),
+        (QPalette.ColorRole.Base,            QColor(20, 24, 41)),
+        (QPalette.ColorRole.AlternateBase,   QColor(15, 18, 25)),
+        (QPalette.ColorRole.ToolTipBase,     QColor(20, 24, 41)),
+        (QPalette.ColorRole.ToolTipText,     QColor(255, 255, 255)),
+        (QPalette.ColorRole.Text,            QColor(255, 255, 255)),
+        (QPalette.ColorRole.Button,          QColor(20, 24, 41)),
+        (QPalette.ColorRole.ButtonText,      QColor(255, 255, 255)),
+        (QPalette.ColorRole.BrightText,      QColor(220, 38, 38)),
+        (QPalette.ColorRole.Highlight,       QColor(59, 130, 246)),
         (QPalette.ColorRole.HighlightedText, QColor(255, 255, 255)),
-        (QPalette.ColorRole.Link,            QColor(102, 169, 255)),
+        (QPalette.ColorRole.Link,            QColor(59, 130, 246)),
     ]:
         palette.setColor(role, color)
     app.setPalette(palette)
-    app.setStyleSheet("""
-        QWidget { font-family: Segoe UI, Arial, sans-serif; font-size: 11pt; }
-        QMainWindow, QMenuBar, QMenu, QStatusBar { background:#1c1c1c; color:#e8e8e8; }
-        QMenuBar::item:selected, QMenu::item:selected { background:#487cff; color:white; }
-        QTabWidget::pane { border:none; }
-        QTabBar::tab {
-            background:#2d2d2d; border:1px solid #404040; border-bottom:none;
-            border-radius:6px 6px 0 0; padding:6px 18px;
-        }
-        QTabBar::tab:selected { background:#1c1c1c; font-weight:600; }
-        QTabBar::tab:hover:!selected { background:#383838; }
-        #Panel, #StatCard {
-            background:rgba(38,38,38,160); border:1px solid #3a3a3a; border-radius:14px;
-        }
-        QLabel#ProjectTitle    { font-size:14pt; font-weight:700; }
-        QLabel#ProjectSubtitle { color:#999999; font-size:10pt; }
-        QLabel#SectionTitle    { font-size:12pt; font-weight:600; }
-        QPushButton, QToolButton {
-            background:#383838; border:1px solid #505050; border-radius:10px; padding:6px 14px;
-        }
-        QPushButton:hover, QToolButton:hover { background:#454545; }
-        QPushButton:pressed, QToolButton:pressed { background:#2a2a2a; }
-        QPushButton:disabled { background:#2a2a2a; color:#555555; border-color:#383838; }
-        QLineEdit, QPlainTextEdit, QComboBox, QDateEdit {
-            background:#121212; border:1px solid #404040; border-radius:10px;
-            padding:6px 8px; color:#ececec; selection-background-color:#487cff;
-        }
-        QFormLayout QLabel { color:#aaaaaa; font-size:10pt; }
-        QTreeWidget {
-            background:transparent; border:1px solid #404040; border-radius:10px;
-            padding:4px; color:#ececec; outline:none;
-        }
-        QTreeWidget::item { border-radius:6px; padding:5px 8px; margin:1px 0; }
-        QTreeWidget::item:selected { background:#2d4c8f; color:white; }
-        QTreeWidget::item:hover:!selected { background:#383838; }
-        QTreeView::branch { background:transparent; }
-        QTreeView::branch:selected { background:#2d4c8f; }
-        QTreeView::branch:hover:!selected { background:#383838; }
-        QTableWidget {
-            background:transparent; border:1px solid #404040; border-radius:10px;
-            padding:4px; color:#ececec; gridline-color:#333333;
-        }
-        QTableWidget::item { background:rgba(25,25,25,140); padding:3px 6px; border:none; }
-        QTableWidget::item:alternate { background:rgba(35,35,35,140); }
-        QHeaderView::section {
-            background:rgba(40,40,40,180); color:#e0e0e0; padding:6px 8px;
-            border:none; border-right:1px solid #3a3a3a; border-bottom:1px solid #3a3a3a;
-            font-weight:600;
-        }
-        QScrollBar:vertical { width:8px; background:transparent; }
-        QScrollBar::handle:vertical { background:#555555; border-radius:4px; min-height:20px; }
-        QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height:0; }
-        #UpdateBanner { background:rgba(30,60,40,220); border-top:1px solid #2d6a3f; }
-        #UpdateBanner QLabel#UpdateMsg { color:#6ee7a0; font-weight:600; }
-        #InstallBtn { background:#1e5c32; border:1px solid #2d8a4a; color:white; font-weight:700; }
-        #InstallBtn:hover { background:#2d8a4a; }
-        #RestoreBtn { background:#5c3d00; border:1px solid #f0b429; color:#f0b429; font-weight:700; }
-        #RestoreBtn:hover { background:#7a5200; }
-    """)
+    qss_path = _resource_path("phoenix_style.qss")
+    if os.path.exists(qss_path):
+        with open(qss_path, "r") as fh:
+            app.setStyleSheet(fh.read())
+    else:
+        app.setStyleSheet(
+            "QMainWindow,QWidget{background:#0a0e27;color:#ffffff;}"
+            "QPushButton{background:#dc2626;color:white;border:none;border-radius:6px;padding:6px 14px;}"
+        )
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

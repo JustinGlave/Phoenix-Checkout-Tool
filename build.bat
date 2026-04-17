@@ -31,6 +31,7 @@ pyinstaller ^
     --name=%APP_NAME% ^
     --add-data="%APP_ICON%;." ^
     --add-data="green.png;." ^
+    --add-data="phoenix_style.qss;." ^
     --add-data="checkout_template.xlsx;." ^
     --add-data="template_gex.xlsx;." ^
     --add-data="template_mav.xlsx;." ^
