@@ -716,3 +716,13 @@ QWidget#RowSep {
     background: rgba(45, 55, 72, 120);
     border: none;
 }
+
+/* ============================================================================
+   APP-SPECIFIC: Checkout sheet list — tag label
+   ============================================================================ */
+
+QLabel#CheckoutTag {
+    font-size: 11pt;
+    font-weight: 500;
+    color: #ffffff;
+}
