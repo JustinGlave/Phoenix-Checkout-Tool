@@ -32,7 +32,10 @@ pyinstaller ^
     --add-data="%APP_ICON%;." ^
     --add-data="PTT_Transparent_green.png;." ^
     --add-data="checkout_template.xlsx;." ^
-    --collect-all=PySide6 ^
+    --add-data="template_gex.xlsx;." ^
+    --add-data="template_mav.xlsx;." ^
+    --add-data="template_cscp_fh.xlsx;." ^
+    --add-data="template_pbc_room.xlsx;." ^
     %APP_MAIN%
 
 if errorlevel 1 (
