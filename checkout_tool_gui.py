@@ -844,7 +844,7 @@ class MainWindow(QMainWindow):
         self._dark_mode_action = QAction("Dark Mode", self)
         self._dark_mode_action.setCheckable(True)
         s = QSettings("ATS Inc", self.APP_NAME)
-        self._dark_mode_action.setChecked(s.value("darkMode", True, type=bool))
+        self._dark_mode_action.setChecked(bool(s.value("darkMode", True, type=bool)))
         self._dark_mode_action.triggered.connect(self._toggle_dark_mode)
         view_menu.addAction(self._dark_mode_action)
 
@@ -955,7 +955,8 @@ class MainWindow(QMainWindow):
 
     # ── Welcome / instructions panel ──────────────────────────────────────────
 
-    def _build_welcome_panel(self) -> QWidget:
+    @staticmethod
+    def _build_welcome_panel() -> QWidget:
         outer = QWidget()
         lay = QVBoxLayout(outer)
         lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1081,7 +1082,8 @@ class MainWindow(QMainWindow):
         outer_lay.addWidget(scroll, stretch=1)
         return outer
 
-    def _build_checkouts_panel(self, records: list, show_type: bool = False) -> QWidget:
+    @staticmethod
+    def _build_checkouts_panel(records: list, show_type: bool = False) -> QWidget:
         panel = QWidget()
         panel.setObjectName("Panel")
         panel_lay = QVBoxLayout(panel)
@@ -1840,7 +1842,8 @@ class MainWindow(QMainWindow):
             else:
                 job_item.setHidden(False)
 
-    def _apply_item_color(self, item: QTreeWidgetItem, pass_fail: str) -> None:
+    @staticmethod
+    def _apply_item_color(item: QTreeWidgetItem, pass_fail: str) -> None:
         if pass_fail == "Pass":
             item.setForeground(0, QBrush(_PASS_COLOR))
         elif pass_fail == "Fail":
@@ -2454,7 +2457,8 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.critical(self, "Export Failed", str(exc))
 
-    def _check_export_issues(self, records: list) -> list[str]:
+    @staticmethod
+    def _check_export_issues(records: list) -> list[str]:
         issues = []
         for r in records:
             tag = r.valve_tag or "(No Tag)"
