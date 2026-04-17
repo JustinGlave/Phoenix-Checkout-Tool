@@ -479,7 +479,7 @@ class _BgWidget(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        path = _resource_path("PTT_Transparent_green.png")
+        path = _resource_path("green.png")
         self._src = QPixmap(path) if os.path.exists(path) else QPixmap()
 
         self._overlay = QLabel(self)
@@ -1098,16 +1098,24 @@ class MainWindow(QMainWindow):
             tag_font = QFont()
             tag_font.setPointSize(10)
             tag_lbl.setFont(tag_font)
+            tag_lbl.setMinimumWidth(100)
             if record.pass_fail == "Pass":
                 tag_lbl.setStyleSheet(f"color: {_PASS_COLOR.name()};")
             elif record.pass_fail == "Fail":
                 tag_lbl.setStyleSheet(f"color: {_FAIL_COLOR.name()};")
-            row_lay.addWidget(tag_lbl, stretch=1)
+            row_lay.addWidget(tag_lbl)
+
+            note_preview = (record.notes or "").split("\n")[0][:80]
+            notes_lbl = QLabel(note_preview)
+            notes_lbl.setObjectName("ProjectSubtitle")
+            notes_lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+            row_lay.addWidget(notes_lbl, stretch=1)
 
             if show_type:
                 type_lbl = QLabel(record.valve_type or "")
                 type_lbl.setObjectName("ProjectSubtitle")
-                type_lbl.setFixedWidth(80)
+                type_lbl.setFixedWidth(150)
+                type_lbl.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
                 row_lay.addWidget(type_lbl)
 
             if record.pass_fail in ("Pass", "Fail"):
@@ -1120,6 +1128,10 @@ class MainWindow(QMainWindow):
                     "font-weight:700; font-size:9pt;"
                 )
                 row_lay.addWidget(pf_lbl)
+            else:
+                spacer = QWidget()
+                spacer.setFixedWidth(48)
+                row_lay.addWidget(spacer)
 
             if record.technician:
                 tech_lbl = QLabel(record.technician)

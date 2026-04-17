@@ -30,7 +30,7 @@ pyinstaller ^
     --icon=%APP_ICON% ^
     --name=%APP_NAME% ^
     --add-data="%APP_ICON%;." ^
-    --add-data="PTT_Transparent_green.png;." ^
+    --add-data="green.png;." ^
     --add-data="checkout_template.xlsx;." ^
     --add-data="template_gex.xlsx;." ^
     --add-data="template_mav.xlsx;." ^
