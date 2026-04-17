@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QDate, Qt, QSettings, QThread, QTimer, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QPainter, QPalette, QPixmap
+from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QIntValidator, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateEdit, QDialog,
     QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
@@ -242,6 +242,210 @@ _NOTES_TEMPLATES: list[tuple[str, str]] = [
     ("RS485 issue",              "BACnet MS/TP communication not established. Verify device address and baud rate."),
     ("Pending sash calibration", "Sash sensor installed. Calibration pending — coordinate with hood manufacturer."),
 ]
+
+# ── Embedded BACnet points list data ─────────────────────────────────────────
+
+_POINTS_HEADERS     = ["Type", "ID", "Name", "Unit", "Function", "Access"]
+_PBC_POINTS_HEADERS = ["Type", "ID", "Name", "Category", "Unit", "Access"]
+
+# RPI — (Type, ID, Name, Unit, Function, Access)
+_RPI_ROWS: list[tuple] = [
+    ("AI",   1,       "AI_UI1Pcnt",                  "%",       "Live",    "R"),
+    ("AI",   2,       "AI_UI2Pcnt",                  "%",       "Live",    "R"),
+    ("AV",   1,       "AV_Pressure",                 "in.wc.",  "Live",    "R"),
+    ("AV",   2,       "AV_UIO1Pcnt",                 "%",       "Live",    "R"),
+    ("AV",   3,       "AV_UIO2Pcnt",                 "%",       "Live",    "R"),
+    ("AV",   4,       "AV_DpSensorSignal",            "Volt",    "Live",    "R"),
+    ("AV",   5,       "AV_AOSignalValue",             "Volt",    "Live",    "R"),
+    ("AV",   6,       "cfgDpSensorSignalMin",         "Volt",    "Config",  "R/W"),
+    ("AV",   7,       "cfgDpSensorSignalMax",         "Volt",    "Config",  "R/W"),
+    ("AV",   8,       "cfgDpSensorValueMin",          "in.wc.",  "Config",  "R/W"),
+    ("AV",   9,       "cfgDpSensorValueMax",          "in.wc.",  "Config",  "R/W"),
+    ("AV",   10,      "cfgDpWarningRangeHigh",        "in.wc.",  "Config",  "R/W"),
+    ("AV",   11,      "cfgDpWarningRangeLow",         "in.wc.",  "Config",  "R/W"),
+    ("AV",   12,      "cfgDpAlarmRangeHigh",          "in.wc.",  "Config",  "R/W"),
+    ("AV",   13,      "cfgDpAlarmRangeLow",           "in.wc.",  "Config",  "R/W"),
+    ("AV",   14,      "cfgWarningAnnunciatorVolume",  "%",       "Config",  "R/W"),
+    ("AV",   15,      "cfgAlarmAnnunciatorVolume",    "%",       "Config",  "R/W"),
+    ("AV",   16,      "cfgAlarmDelayTm(sec)",         "Second",  "Config",  "R/W"),
+    ("AV",   17,      "cfgWarningDelayTm(sec)",       "Second",  "Config",  "R/W"),
+    ("AV",   18,      "cfgMuteResetTm(sec)",          "Second",  "Config",  "R/W"),
+    ("AV",   19,      "cfgDpAOSignalMin",             "Volt",    "Config",  "R/W"),
+    ("AV",   20,      "cfgDpAOSignalMax",             "Volt",    "Config",  "R/W"),
+    ("AV",   21,      "cfgDrSnrDelayTm(sec)",         "Second",  "Config",  "R/W"),
+    ("AV",   22,      "cfgDpSnrSignalHysteresis",     "in.wc.",  "Config",  "R/W"),
+    ("BV",   1,       "BV_DoorSwitchStatus",          "",        "Live",    "R"),
+    ("BV",   2,       "cfgMuteEnable",                "",        "Config",  "R/W"),
+    ("BV",   3,       "cfgWarningHighEnable",         "",        "Config",  "R/W"),
+    ("BV",   4,       "cfgWarningLowEnable",          "",        "Config",  "R/W"),
+    ("BV",   5,       "cfgAlarmHighEnable",           "",        "Config",  "R/W"),
+    ("BV",   6,       "cfgAlarmLowEnable",            "",        "Config",  "R/W"),
+    ("BV",   7,       "cfgDrSnrEnable",               "",        "Config",  "R/W"),
+    ("BV",   8,       "cfgDrSnrNormOpen",             "",        "Config",  "R/W"),
+    ("BV",   9,       "cfgDpAOEnable",                "",        "Config",  "R/W"),
+    ("BV",   10,      "cfgDryContactNormOpen",        "",        "Config",  "R/W"),
+    ("BV",   11,      "cfgDpSnrRangeCheckEnable",     "",        "Config",  "R/W"),
+    ("BV",   12,      "BV_DO",                        "",        "Live",    "R"),
+    ("BV",   13,      "BV_DpSenorOutOfRange",         "",        "Live",    "R"),
+    ("BV",   14,      "BV_StandbyCmd",                "",        "Command", "R/W"),
+    ("BV",   15,      "BV_AudibleInhibit",            "",        "Live",    "R"),
+    ("File", 65536,   "Firmware",                     "",        "",        ""),
+    ("File", 131072,  "Application",                  "",        "",        ""),
+    ("File", 196609,  "Registration",                 "",        "Not Used","Not Used"),
+    ("File", 262147,  "PointConfig",                  "",        "Not Used","Not Used"),
+    ("MSV",  1,       "MSV_PressureStatus",           "",        "Live",    "R"),
+    ("MSV",  2,       "cfgDpSensorSignalType",        "",        "Config",  "R/W"),
+    ("MSV",  3,       "cfgDpAOSignalType",            "",        "Config",  "R/W"),
+    ("MSV",  4,       "cfgDOAssignmentType",          "",        "Config",  "R/W"),
+    ("MSV",  5,       "MSV_DpSensorSignalUnit",       "",        "Config",  "R"),
+]
+
+# PBC — (Type, ID, Name, Category, Unit, Access)
+_PBC_ROWS: list[tuple] = [
+    ("AI",  "1",   "LabTotalExhRet",           "Lab Zone",    "CFM",                                   "R"),
+    ("AI",  "2",   "LabTotalSupply",            "Lab Zone",    "CFM",                                   "R"),
+    ("AI",  "3",   "LabTotalGexFlow",           "Lab Zone",    "CFM",                                   "R"),
+    ("AI",  "4",   "LabTotalMavFlow",           "Lab Zone",    "CFM",                                   "R"),
+    ("AI",  "5",   "LabTotalHoodFlow",          "Lab Zone",    "CFM",                                   "R"),
+    ("AI",  "6",   "LabTotalReturnFlow",        "Lab Zone",    "CFM",                                   "R"),
+    ("AI",  "7",   "LabTotalBypassFlow",        "Lab Zone",    "CFM",                                   "R"),
+    ("AI",  "8",   "LabZoneFlowOffset",         "Lab Zone",    "CFM",                                   "R"),
+    ("AI",  "9",   "LabZoneEffFlowOffsetSP",    "Lab Zone",    "CFM",                                   "R"),
+    ("AI",  "10",  "ACH",                       "Generic Zone","",                                      "R"),
+    ("AI",  "30",  "LoSEATotalExhaust",         "LoSEA Zone",  "CFM",                                   "R"),
+    ("AI",  "31",  "LoSEATotalReturn",          "LoSEA Zone",  "CFM",                                   "R"),
+    ("AI",  "32",  "LoSEAZoneFlowOffset",       "LoSEA Zone",  "CFM",                                   "R"),
+    ("AI",  "33",  "LoSEATotalSupply",          "LoSEA Zone",  "CFM",                                   "R"),
+    ("AI",  "34",  "LoSEATotalExhRet",          "LoSEA Zone",  "CFM",                                   "R"),
+    ("AI",  "35",  "LoSEAEffOffsetSP",          "LoSEA Zone",  "CFM",                                   "R"),
+    ("AI",  "50",  "ValveEffFlowCmd1",          "LoSEA Valve", "CFM",                                   "R"),
+    ("AI",  "51",  "Valveflow1",                "LoSEA Valve", "CFM",                                   "R"),
+    ("AI",  "52",  "ValveVpot1",                "LoSEA Valve", "V",                                     "R"),
+    ("AI",  "53",  "ValveEffFlowCmd2",          "LoSEA Valve", "CFM",                                   "R"),
+    ("AI",  "54",  "Valveflow2",                "LoSEA Valve", "CFM",                                   "R"),
+    ("AI",  "55",  "ValveVpot2",                "LoSEA Valve", "V",                                     "R"),
+    ("AI",  "56",  "ValveEffFlowCmd3",          "LoSEA Valve", "CFM",                                   "R"),
+    ("AI",  "57",  "Valveflow3",                "LoSEA Valve", "CFM",                                   "R"),
+    ("AI",  "58",  "ValveVpot3",                "LoSEA Valve", "V",                                     "R"),
+    ("AI",  "59",  "ValveEffFlowCmd4",          "LoSEA Valve", "CFM",                                   "R"),
+    ("AI",  "60",  "Valveflow4",                "LoSEA Valve", "CFM",                                   "R"),
+    ("AI",  "61",  "ValveVpot4",                "LoSEA Valve", "V",                                     "R"),
+    ("AI",  "62",  "ValveAlarmStatusBits1",     "LoSEA Valve", "32-bit integer",                        "R"),
+    ("AI",  "63",  "ValveAlarmStatusBits2",     "LoSEA Valve", "32-bit integer",                        "R"),
+    ("AI",  "64",  "ValveAlarmStatusBits3",     "LoSEA Valve", "32-bit integer",                        "R"),
+    ("AI",  "65",  "ValveAlarmStatusBits4",     "LoSEA Valve", "32-bit integer",                        "R"),
+    ("AI",  "101", "UIO1ScaledValue",           "IO",          "Configured",                            "R"),
+    ("AI",  "102", "UIO1RawValue",              "IO",          "Based on UIO characteristic",           "R"),
+    ("AI",  "131", "UIO16ScaledValue",          "IO",          "Configured",                            "R"),
+    ("AI",  "132", "UIO16RawValue",             "IO",          "Based on UIO characteristic",           "R"),
+    ("AI",  "200", "Space_Temp",               "Generic DDC", "DegF",                                   "R"),
+    ("AI",  "201", "EffCoolTempSP",             "Generic DDC", "DegF",                                   "R"),
+    ("AI",  "202", "EffHeatTempSP",             "Generic DDC", "DegF",                                   "R"),
+    ("AI",  "203", "CoolingDemand",             "Generic DDC", "%",                                      "R"),
+    ("AI",  "204", "HeatingDemand",             "Generic DDC", "%",                                      "R"),
+    ("AI",  "220", "RoomHumidity",              "Generic DDC", "%",                                      "R"),
+    ("AI",  "221", "HumidifyDemand",            "Generic DDC", "%",                                      "R"),
+    ("AI",  "222", "DehHumidifyDemand",         "Generic DDC", "%",                                      "R"),
+    ("AI",  "999", "aiEngineering",             "Engineering", "",                                       "R"),
+    ("AO",  "1",   "LabZoneFlowOffsetCmd",      "",            "CFM",                                    "RW"),
+    ("AO",  "2",   "LoSEAZoneFlowOffsetCmd",    "",            "CFM",                                    "RW"),
+    ("AO",  "101", "UIO1SignalCmd1",            "",            "Configured",                             "RW"),
+    ("AO",  "116", "UIO16SignalCmd16",          "",            "Configured",                             "RW"),
+    ("AO",  "200", "OccCoolSetpoint",           "",            "DegF",                                   "RW"),
+    ("AO",  "201", "OccHeatSetpoint",           "",            "DegF",                                   "RW"),
+    ("AO",  "202", "UnoccCoolSetpoint",         "",            "DegF",                                   "RW"),
+    ("AO",  "203", "UnoccHeatSetpoint",         "",            "DegF",                                   "RW"),
+    ("AO",  "204", "StndbyCoolSetpoint",        "",            "DegF",                                   "RW"),
+    ("AO",  "205", "StndbyHeatSetpoint",        "",            "DegF",                                   "RW"),
+    ("AO",  "206", "T_Offset_LVR_range",        "",            "%",                                      "RW"),
+    ("AO",  "207", "AuxTempSetpt",              "",            "DegF",                                   "RW"),
+    ("AO",  "220", "HumiditySetpt",             "",            "%",                                      "RW"),
+    ("AO",  "999", "aoEngineering",             "",            "",                                       "R"),
+    ("AV",  "50",  "ValveFlowCmd1",             "",            "CFM",                                    "RW"),
+    ("AV",  "51",  "ValveFlowCmd2",             "",            "CFM",                                    "RW"),
+    ("AV",  "52",  "ValveFlowCmd3",             "",            "CFM",                                    "RW"),
+    ("AV",  "53",  "ValveFlowCmd4",             "",            "CFM",                                    "RW"),
+    ("AV",  "210", "MinVentOccSP",              "",            "CFM",                                    "RW"),
+    ("AV",  "211", "MinVentStandbySP",          "",            "CFM",                                    "RW"),
+    ("AV",  "212", "MinVentUnoccSP",            "",            "CFM",                                    "RW"),
+    ("AV",  "213", "MinVentVacantSP",           "",            "CFM",                                    "RW"),
+    ("AV",  "999", "avEngineering",             "AI",          "",                                       "R"),
+    ("BI",  "50",  "ValveJamALarm1",            "",            "TRUE/FALSE",                             "R"),
+    ("BI",  "51",  "ValveFlowAlarm1",           "",            "TRUE/FALSE",                             "R"),
+    ("BI",  "52",  "ValveJamALarm2",            "",            "TRUE/FALSE",                             "R"),
+    ("BI",  "53",  "ValveFlowAlarm2",           "",            "TRUE/FALSE",                             "R"),
+    ("BI",  "54",  "ValveJamAlarm3",            "",            "TRUE/FALSE",                             "R"),
+    ("BI",  "55",  "ValveFlowAlarm3",           "",            "TRUE/FALSE",                             "R"),
+    ("BI",  "56",  "ValveJamALarm4",            "",            "TRUE/FALSE",                             "R"),
+    ("BI",  "57",  "ValveFlowAlarm4",           "",            "TRUE/FALSE",                             "R"),
+    ("BI",  "999", "biEngineering",             "",            "",                                       "R"),
+    ("BO",  "999", "boEngineering",             "",            "",                                       "R"),
+    ("BV",  "50",  "ValveFlowOvridEnable",      "",            "TRUE/FALSE",                             "RW"),
+    ("BV",  "51",  "ValveVpotOvridEnable",      "",            "Not Enabled in MVO template. Reserved",  "RW"),
+    ("BV",  "52",  "UIOSignalOvridEnable",      "",            "TRUE/FALSE",                             "RW"),
+    ("BV",  "999", "bvEngineering",             "",            "",                                       "R"),
+    ("MSO", "1",   "EModeCmd",                  "",            "",                                       "RW"),
+    ("MSO", "2",   "OccupancyCmd",              "",            "",                                       "RW"),
+    ("MSO", "999", "msoEngineering",            "",            "",                                       "R"),
+    ("MSV", "1",   "EffEmMode",                 "",            "",                                       "R"),
+    ("MSV", "2",   "EffOccMode",                "",            "",                                       "R"),
+    ("MSV", "3",   "LabZoneCtrlState",          "",            "Come from ErrorCode slot of LabZone FB", "R"),
+    ("MSV", "4",   "LoSEAZoneCtrlState",        "",            "Come from ErrorCode slot of LoSEAZone FB", "R"),
+    ("MSV", "50",  "ValveState1",               "",            "Disable/Opening/closing/AppOverride",    "R"),
+    ("MSV", "51",  "ValveState2",               "",            "Disable/Opening/closing/AppOverride",    "R"),
+    ("MSV", "52",  "ValveState3",               "",            "Disable/Opening/closing/AppOverride",    "R"),
+    ("MSV", "53",  "ValveState4",               "",            "Disable/Opening/closing/AppOverride",    "R"),
+    ("MSV", "200", "TempCtrlMode",              "",            "",                                       "R"),
+    ("MSV", "999", "msvEngineering",            "",            "",                                       "R"),
+]
+
+# Each entry: (headers, rows)
+_POINTS_LIST_DATA: dict[str, tuple[list[str], list[tuple]]] = {
+    "ACM Points List": (_POINTS_HEADERS, [
+        ("BI",  1,   "FlowAlarm",              "Alarm/Normal", "Feedback", "R"),
+        ("BI",  2,   "JamAlarm",               "Alarm/Normal", "Feedback", "R"),
+        ("MSV", 1,   "FSMStatus",              "",             "Feedback", "R"),
+        ("MSV", 2,   "EmergencyMode",          "",             "",         "R"),
+        ("MSV", 3,   "ValvePositionStatus",    "",             "Feedback", "R"),
+        ("MSV", 4,   "AcuatorStatus",          "",             "",         "R"),
+        ("MSV", 5,   "CurveStatus",            "",             "",         "R"),
+        ("AO",  20,  "FlowCmdOverride",        "CFM",          "",         "RW"),
+        ("AO",  21,  "VpotCmdOverride",        "Volt",         "",         "RW"),
+        ("AI",  20,  "FlowFdbk",               "CFM",          "",         "R"),
+        ("AI",  21,  "Vpot",                   "Volt",         "",         "R"),
+        ("AI",  22,  "EffFlowSetpoint",        "CFM",          "",         "R"),
+        ("AI",  200, "UIO1_PresentValue_In",   "%",            "",         "R"),
+        ("AO",  200, "UIO1_PresentValue_Out",  "%",            "",         "R"),
+        ("AI",  201, "UIO2_PresentValue_In",   "%",            "",         "R"),
+        ("AO",  201, "UIO2_PresentValue_Out",  "%",            "",         "R"),
+        ("AI",  202, "UIO3_PresentValue_In",   "%",            "",         "R"),
+    ]),
+    "FHD500 Points List": (_POINTS_HEADERS, [
+        ("MSV", 1,   "HoodState",                "",              "Live",   "R"),
+        ("AI",  1,   "SashOpening",              "%",             "Live",   "R"),
+        ("AI",  2,   "FaceVelocity",             "FPM",           "Live",   "R"),
+        ("AI",  3,   "HoodCommand",              "CFM",           "Live",   "R"),
+        ("AI",  4,   "FlowFdbk",                 "CFM",           "Live",   "R"),
+        ("BI",  1,   "OccupancyDetected",        "",              "Live",   "R"),
+        ("BI",  2,   "AlarmSashBroken",          "",              "Live",   "R"),
+        ("BI",  3,   "AlarmSashHeight",          "",              "Live",   "R"),
+        ("BI",  4,   "AlarmEmergencyExhaust",    "",              "Live",   "R"),
+        ("BI",  5,   "AlarmEnergyWaste",         "",              "Live",   "R"),
+        ("AO",  1,   "FlowCmdOverride",          "CFM",           "Config", "RW"),
+        ("AO",  2,   "FVCmdOverride",            "FPM",           "Config", "RW"),
+        ("BO",  1,   "RemoteEMExhaustOverride",  "mVolts/ohms",   "Config", "RW"),
+        ("BO",  2,   "HibernationOverride",      "",              "Config", "RW"),
+        ("AI",  200, "UIO1_PresentValue_In",     "%",             "",       ""),
+        ("AO",  200, "UIO1_PresentValue_Out",    "%",             "",       ""),
+        ("AI",  201, "UIO2_PresentValue_In",     "%",             "",       ""),
+        ("AO",  201, "UIO2_PresentValue_Out",    "%",             "",       ""),
+        ("AI",  202, "UI1_PresentValue_In",      "%",             "",       ""),
+        ("AI",  203, "UI2_PresentValue_In",      "%",             "",       ""),
+        ("BO",  200, "DO_PresentValue_Out",      "",              "",       ""),
+    ]),
+    "PBC Points List": (_PBC_POINTS_HEADERS, _PBC_ROWS),
+    "RPI Points List": (_POINTS_HEADERS, _RPI_ROWS),
+}
 
 # Pass/Fail tree item colors (work on both light and dark backgrounds)
 _PASS_COLOR = QColor(55, 195, 100)
@@ -509,8 +713,11 @@ class BatchCheckoutDialog(QDialog):
         if result is None:
             return None
         prefix, start, pad = result
+        count = self._count.value()
+        if pad:
+            pad = max(pad, len(str(start + count - 1)))
         tags = []
-        for i in range(self._count.value()):
+        for i in range(count):
             n = start + i
             tags.append(f"{prefix}{str(n).zfill(pad) if pad else n}")
         return tags
@@ -632,7 +839,7 @@ class MainWindow(QMainWindow):
         self._dark_mode_action = QAction("Dark Mode", self)
         self._dark_mode_action.setCheckable(True)
         s = QSettings("ATS Inc", self.APP_NAME)
-        self._dark_mode_action.setChecked(s.value("darkMode", "true") != "false")
+        self._dark_mode_action.setChecked(s.value("darkMode", True, type=bool))
         self._dark_mode_action.triggered.connect(self._toggle_dark_mode)
         view_menu.addAction(self._dark_mode_action)
 
@@ -641,21 +848,11 @@ class MainWindow(QMainWindow):
         test_act.triggered.connect(self._create_test_data)
         tools_menu.addAction(test_act)
 
-        _POINTS_LISTS_DIR = (
-            r"C:\Users\justing\OneDrive - ATS\Desktop\Templates and Submittals\Points lists"
-        )
-        _POINTS_FILES = [
-            ("ACM Points List",  "ACM Points list.xlsx"),
-            ("FHD500 Points List", "FHD500 Points list.xlsx"),
-            ("PBC Points List",  "PBC Points list.xlsx"),
-            ("RPI Points List",  "RPI Points list.xlsx"),
-        ]
         pl_menu = tools_menu.addMenu("Points Lists")
-        for _title, _fname in _POINTS_FILES:
-            _path = os.path.join(_POINTS_LISTS_DIR, _fname)
+        for _title in _POINTS_LIST_DATA:
             act = QAction(_title, self)
             act.triggered.connect(
-                lambda checked=False, p=_path, t=_title: self._open_points_list(p, t)
+                lambda checked=False, t=_title: self._open_points_list(t)
             )
             pl_menu.addAction(act)
 
@@ -879,6 +1076,74 @@ class MainWindow(QMainWindow):
         outer_lay.addWidget(scroll, stretch=1)
         return outer
 
+    def _build_checkouts_panel(self, records: list, show_type: bool = False) -> QWidget:
+        panel = QWidget()
+        panel.setObjectName("Panel")
+        panel_lay = QVBoxLayout(panel)
+        panel_lay.setContentsMargins(16, 12, 16, 12)
+        panel_lay.setSpacing(0)
+
+        title_lbl = QLabel("Checkout Sheets")
+        title_lbl.setObjectName("SectionTitle")
+        panel_lay.addWidget(title_lbl)
+        panel_lay.addSpacing(10)
+
+        for record in records:
+            row = QWidget()
+            row_lay = QHBoxLayout(row)
+            row_lay.setContentsMargins(8, 6, 8, 6)
+            row_lay.setSpacing(12)
+
+            tag_lbl = QLabel(record.valve_tag or "(No Tag)")
+            tag_font = QFont()
+            tag_font.setPointSize(10)
+            tag_lbl.setFont(tag_font)
+            if record.pass_fail == "Pass":
+                tag_lbl.setStyleSheet(f"color: {_PASS_COLOR.name()};")
+            elif record.pass_fail == "Fail":
+                tag_lbl.setStyleSheet(f"color: {_FAIL_COLOR.name()};")
+            row_lay.addWidget(tag_lbl, stretch=1)
+
+            if show_type:
+                type_lbl = QLabel(record.valve_type or "")
+                type_lbl.setObjectName("ProjectSubtitle")
+                type_lbl.setFixedWidth(80)
+                row_lay.addWidget(type_lbl)
+
+            if record.pass_fail in ("Pass", "Fail"):
+                pf_lbl = QLabel(record.pass_fail.upper())
+                pf_lbl.setFixedWidth(48)
+                pf_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                color = "#2d8a4a" if record.pass_fail == "Pass" else "#c0392b"
+                pf_lbl.setStyleSheet(
+                    f"background:{color}; color:white; border-radius:5px;"
+                    "font-weight:700; font-size:9pt;"
+                )
+                row_lay.addWidget(pf_lbl)
+
+            if record.technician:
+                tech_lbl = QLabel(record.technician)
+                tech_lbl.setObjectName("ProjectSubtitle")
+                tech_lbl.setFixedWidth(120)
+                row_lay.addWidget(tech_lbl)
+
+            if record.date:
+                date_lbl = QLabel(record.date)
+                date_lbl.setObjectName("ProjectSubtitle")
+                date_lbl.setFixedWidth(90)
+                date_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                row_lay.addWidget(date_lbl)
+
+            panel_lay.addWidget(row)
+
+            if record is not records[-1]:
+                sep = QWidget()
+                sep.setFixedHeight(1)
+                sep.setStyleSheet("background: rgba(128,128,128,60);")
+                panel_lay.addWidget(sep)
+
+        return panel
+
     def _populate_archived_panel(self, job_id: str) -> None:
         """Fill the archived job summary panel for the given job."""
         job = self._store.get_job(job_id)
@@ -910,67 +1175,7 @@ class MainWindow(QMainWindow):
             self._arch_list_layout.insertWidget(0, empty_lbl)
             return
 
-        panel = QWidget()
-        panel.setObjectName("Panel")
-        panel_lay = QVBoxLayout(panel)
-        panel_lay.setContentsMargins(16, 12, 16, 12)
-        panel_lay.setSpacing(0)
-
-        title_lbl = QLabel("Checkout Sheets")
-        title_lbl.setObjectName("SectionTitle")
-        panel_lay.addWidget(title_lbl)
-        panel_lay.addSpacing(10)
-
-        for record in records:
-            row = QWidget()
-            row_lay = QHBoxLayout(row)
-            row_lay.setContentsMargins(8, 6, 8, 6)
-            row_lay.setSpacing(12)
-
-            tag_lbl = QLabel(record.valve_tag or "(No Tag)")
-            tag_font = QFont()
-            tag_font.setPointSize(10)
-            tag_lbl.setFont(tag_font)
-            if record.pass_fail == "Pass":
-                tag_lbl.setStyleSheet(f"color: {_PASS_COLOR.name()};")
-            elif record.pass_fail == "Fail":
-                tag_lbl.setStyleSheet(f"color: {_FAIL_COLOR.name()};")
-            row_lay.addWidget(tag_lbl, stretch=1)
-
-            if record.pass_fail in ("Pass", "Fail"):
-                pf_lbl = QLabel(record.pass_fail.upper())
-                pf_lbl.setFixedWidth(48)
-                pf_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                color = "#2d8a4a" if record.pass_fail == "Pass" else "#c0392b"
-                pf_lbl.setStyleSheet(
-                    f"background:{color}; color:white; border-radius:5px;"
-                    "font-weight:700; font-size:9pt;"
-                )
-                row_lay.addWidget(pf_lbl)
-
-            if record.technician:
-                tech_lbl = QLabel(record.technician)
-                tech_lbl.setObjectName("ProjectSubtitle")
-                tech_lbl.setFixedWidth(120)
-                row_lay.addWidget(tech_lbl)
-
-            if record.date:
-                date_lbl = QLabel(record.date)
-                date_lbl.setObjectName("ProjectSubtitle")
-                date_lbl.setFixedWidth(90)
-                date_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                row_lay.addWidget(date_lbl)
-
-            panel_lay.addWidget(row)
-
-            # Thin separator line between rows
-            if record is not records[-1]:
-                sep = QWidget()
-                sep.setFixedHeight(1)
-                sep.setStyleSheet("background: rgba(128,128,128,60);")
-                panel_lay.addWidget(sep)
-
-        self._arch_list_layout.insertWidget(0, panel)
+        self._arch_list_layout.insertWidget(0, self._build_checkouts_panel(records, show_type=False))
 
     def _on_restore_archived_from_panel(self) -> None:
         job_id = getattr(self, "_arch_current_job_id", None)
@@ -1063,71 +1268,7 @@ class MainWindow(QMainWindow):
             self._job_list_layout.insertWidget(0, empty_lbl)
             return
 
-        panel = QWidget()
-        panel.setObjectName("Panel")
-        panel_lay = QVBoxLayout(panel)
-        panel_lay.setContentsMargins(16, 12, 16, 12)
-        panel_lay.setSpacing(0)
-
-        title_lbl = QLabel("Checkout Sheets")
-        title_lbl.setObjectName("SectionTitle")
-        panel_lay.addWidget(title_lbl)
-        panel_lay.addSpacing(10)
-
-        for record in records:
-            row = QWidget()
-            row_lay = QHBoxLayout(row)
-            row_lay.setContentsMargins(8, 6, 8, 6)
-            row_lay.setSpacing(12)
-
-            tag_lbl = QLabel(record.valve_tag or "(No Tag)")
-            tag_font = QFont()
-            tag_font.setPointSize(10)
-            tag_lbl.setFont(tag_font)
-            if record.pass_fail == "Pass":
-                tag_lbl.setStyleSheet(f"color: {_PASS_COLOR.name()};")
-            elif record.pass_fail == "Fail":
-                tag_lbl.setStyleSheet(f"color: {_FAIL_COLOR.name()};")
-            row_lay.addWidget(tag_lbl, stretch=1)
-
-            type_lbl = QLabel(record.valve_type or "")
-            type_lbl.setObjectName("ProjectSubtitle")
-            type_lbl.setFixedWidth(80)
-            row_lay.addWidget(type_lbl)
-
-            if record.pass_fail in ("Pass", "Fail"):
-                pf_lbl = QLabel(record.pass_fail.upper())
-                pf_lbl.setFixedWidth(48)
-                pf_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                color = "#2d8a4a" if record.pass_fail == "Pass" else "#c0392b"
-                pf_lbl.setStyleSheet(
-                    f"background:{color}; color:white; border-radius:5px;"
-                    "font-weight:700; font-size:9pt;"
-                )
-                row_lay.addWidget(pf_lbl)
-
-            if record.technician:
-                tech_lbl = QLabel(record.technician)
-                tech_lbl.setObjectName("ProjectSubtitle")
-                tech_lbl.setFixedWidth(120)
-                row_lay.addWidget(tech_lbl)
-
-            if record.date:
-                date_lbl = QLabel(record.date)
-                date_lbl.setObjectName("ProjectSubtitle")
-                date_lbl.setFixedWidth(90)
-                date_lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                row_lay.addWidget(date_lbl)
-
-            panel_lay.addWidget(row)
-
-            if record is not records[-1]:
-                sep = QWidget()
-                sep.setFixedHeight(1)
-                sep.setStyleSheet("background: rgba(128,128,128,60);")
-                panel_lay.addWidget(sep)
-
-        self._job_list_layout.insertWidget(0, panel)
+        self._job_list_layout.insertWidget(0, self._build_checkouts_panel(records, show_type=True))
 
     # ── Header panel ─────────────────────────────────────────────────────────
 
@@ -1220,6 +1361,10 @@ class MainWindow(QMainWindow):
         self._f_emer_min     = le()
         self._f_valve_min_sp = le()
         self._f_valve_max_sp = le()
+        _cfm_validator = QIntValidator(0, 99999, self)
+        self._f_emer_min.setValidator(_cfm_validator)
+        self._f_valve_min_sp.setValidator(_cfm_validator)
+        self._f_valve_max_sp.setValidator(_cfm_validator)
 
         self._tag_label = QLabel("Valve Tag #")
         form.addRow(self._tag_label,        self._f_valve_tag)
@@ -1375,15 +1520,23 @@ class MainWindow(QMainWindow):
         title_lbl.setObjectName("SectionTitle")
 
         _cbs = checkboxes   # capture for button closures
+
+        def _bulk_set(checked: bool) -> None:
+            self._loading = True
+            for cb in _cbs.values():
+                cb.setChecked(checked)
+            self._loading = False
+            self._on_any_change()
+
         btn_bar = QHBoxLayout()
         btn_bar.setSpacing(4)
         btn_bar.addStretch()
         check_all_btn = QPushButton("Check All")
         check_all_btn.setFixedHeight(22)
-        check_all_btn.clicked.connect(lambda: [cb.setChecked(True) for cb in _cbs.values()])
+        check_all_btn.clicked.connect(lambda: _bulk_set(True))
         clear_all_btn = QPushButton("Clear All")
         clear_all_btn.setFixedHeight(22)
-        clear_all_btn.clicked.connect(lambda: [cb.setChecked(False) for cb in _cbs.values()])
+        clear_all_btn.clicked.connect(lambda: _bulk_set(False))
         btn_bar.addWidget(check_all_btn)
         btn_bar.addWidget(clear_all_btn)
 
@@ -1649,7 +1802,17 @@ class MainWindow(QMainWindow):
             any_visible = False
             for j in range(job_item.childCount()):
                 child = job_item.child(j)
-                hidden = bool(q) and q not in child.text(0).lower()
+                if q:
+                    _, cid = child.data(0, self._ROLE)
+                    rec = self._store.get(cid)
+                    hidden = not (
+                        q in child.text(0).lower()
+                        or (rec and q in (rec.technician or "").lower())
+                        or (rec and q in (rec.description or "").lower())
+                        or (rec and q in (rec.valve_type or "").lower())
+                    )
+                else:
+                    hidden = False
                 child.setHidden(hidden)
                 if not hidden:
                     any_visible = True
@@ -1721,6 +1884,9 @@ class MainWindow(QMainWindow):
             return
 
         # kind == "checkout"
+        if self._save_timer.isActive():
+            self._save_timer.stop()
+            self._save_current()
         self._main_stack.setCurrentIndex(1)   # checkout editor
         self._new_checkout_btn.setEnabled(True)
         self._batch_btn.setEnabled(True)
@@ -1786,6 +1952,12 @@ class MainWindow(QMainWindow):
 
     def _create_test_data(self) -> None:
         """Create a test job with 5 varied valve checkouts for export testing."""
+        if QMessageBox.question(
+            self, "Create Test Data",
+            "This will create a test job (TEST-001) with 7 sample checkout sheets.\n\nProceed?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        ) != QMessageBox.StandardButton.Yes:
+            return
         job = Job(job_number="TEST-001", job_name="Export Test Project")
         self._store.add_job(job)
 
@@ -2066,39 +2238,15 @@ class MainWindow(QMainWindow):
             f"Created job '{job.job_number} — {job.job_name}' with 7 test valve checkouts.",
         )
 
-    def _open_points_list(self, filepath: str, title: str) -> None:
-        """Open an Excel points list file in a resizable popup table dialog."""
-        import openpyxl
-
-        if not os.path.exists(filepath):
-            QMessageBox.warning(self, "File Not Found", f"Could not find:\n{filepath}")
-            return
-
-        try:
-            wb = openpyxl.load_workbook(filepath, data_only=True)
-            ws = wb.active
-            rows = list(ws.iter_rows(values_only=True))
-        except Exception as exc:
-            QMessageBox.critical(self, "Error", f"Failed to open file:\n{exc}")
-            return
-
-        if not rows:
-            QMessageBox.information(self, title, "The file appears to be empty.")
-            return
+    def _open_points_list(self, title: str) -> None:
+        headers, rows = _POINTS_LIST_DATA.get(title, (_POINTS_HEADERS, []))
 
         dlg = QDialog(self)
         dlg.setWindowTitle(title)
-        dlg.resize(900, 600)
+        dlg.resize(760, 600)
         lay = QVBoxLayout(dlg)
 
-        # Find the column count from the widest row
-        col_count = max(len(r) for r in rows)
-        header_row = rows[0]
-        data_rows = rows[1:]
-
-        tbl = QTableWidget(len(data_rows), col_count, dlg)
-        # Use first row as horizontal header if it looks like labels
-        headers = [str(v) if v is not None else "" for v in header_row]
+        tbl = QTableWidget(len(rows), len(headers), dlg)
         tbl.setHorizontalHeaderLabels(headers)
         tbl.verticalHeader().setVisible(False)
         tbl.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
@@ -2106,9 +2254,8 @@ class MainWindow(QMainWindow):
         tbl.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         tbl.horizontalHeader().setStretchLastSection(True)
 
-        for r_idx, row in enumerate(data_rows):
-            for c_idx in range(col_count):
-                val = row[c_idx] if c_idx < len(row) else None
+        for r_idx, row in enumerate(rows):
+            for c_idx, val in enumerate(row):
                 tbl.setItem(r_idx, c_idx, QTableWidgetItem("" if val is None else str(val)))
 
         lay.addWidget(tbl)
@@ -2294,11 +2441,11 @@ class MainWindow(QMainWindow):
         issues = []
         for r in records:
             tag = r.valve_tag or "(No Tag)"
-            if not r.valve_tag.strip():
+            if not (r.valve_tag or "").strip():
                 issues.append(f"\u2022 {tag}: missing valve tag")
             if not r.pass_fail:
                 issues.append(f"\u2022 {tag}: no Pass/Fail result set")
-            if not r.technician.strip():
+            if not (r.technician or "").strip():
                 issues.append(f"\u2022 {tag}: no technician name")
             if r.notes and len(r.notes.split("\n")) > NOTES_MAX_LINES:
                 issues.append(f"\u2022 {tag}: notes exceed {NOTES_MAX_LINES} lines (will be truncated in export)")
@@ -2344,7 +2491,6 @@ class MainWindow(QMainWindow):
         self._f_description.setText(record.description)
         self._f_model.setText(record.model)
         self._f_valve_type.setCurrentText(record.valve_type or "Fume Hood")
-        self._update_fume_hood_widgets(record.valve_type or "Fume Hood")
         if record.date:
             d = QDate.fromString(record.date, "yyyy-MM-dd")
             if d.isValid():
@@ -2356,30 +2502,11 @@ class MainWindow(QMainWindow):
 
         # Wiring
         w = record.wiring
-        for (idx, fld), cb in self._phoenix_cbs.items():
-            cb.blockSignals(True)
-            cb.setChecked(w.get(f"p_{idx}_{fld}", False))
-            cb.blockSignals(False)
-        for (idx, fld), cb in self._bb_cbs.items():
-            cb.blockSignals(True)
-            cb.setChecked(w.get(f"b_{idx}_{fld}", False))
-            cb.blockSignals(False)
-        for (idx, fld), cb in self._acm_cbs.items():
-            cb.blockSignals(True)
-            cb.setChecked(w.get(f"acm_{idx}_{fld}", False))
-            cb.blockSignals(False)
-        for (idx, fld), cb in self._dhv_cbs.items():
-            cb.blockSignals(True)
-            cb.setChecked(w.get(f"dhv_{idx}_{fld}", False))
-            cb.blockSignals(False)
-        for (idx, fld), cb in self._pbc_l_cbs.items():
-            cb.blockSignals(True)
-            cb.setChecked(w.get(f"pbc_l_{idx}_{fld}", False))
-            cb.blockSignals(False)
-        for (idx, fld), cb in self._pbc_r_cbs.items():
-            cb.blockSignals(True)
-            cb.setChecked(w.get(f"pbc_r_{idx}_{fld}", False))
-            cb.blockSignals(False)
+        for cbs, prefix in self._wiring_boards():
+            for (idx, fld), cb in cbs.items():
+                cb.blockSignals(True)
+                cb.setChecked(w.get(f"{prefix}_{idx}_{fld}", False))
+                cb.blockSignals(False)
         for sash_cb in (self._celeris_sash_cb, self._cscp_sash_cb):
             sash_cb.blockSignals(True)
             sash_cb.setChecked(record.sash_sensor_mounted)
@@ -2508,6 +2635,16 @@ class MainWindow(QMainWindow):
         hdr_h = self._vfy_table.horizontalHeader().height()
         self._vfy_table.setFixedHeight(hdr_h + visible_vfy * self._vfy_row_height + 4)
 
+    def _wiring_boards(self) -> list[tuple[dict, str]]:
+        return [
+            (self._phoenix_cbs, "p"),
+            (self._bb_cbs, "b"),
+            (self._acm_cbs, "acm"),
+            (self._dhv_cbs, "dhv"),
+            (self._pbc_l_cbs, "pbc_l"),
+            (self._pbc_r_cbs, "pbc_r"),
+        ]
+
     def _on_any_change(self) -> None:
         if self._loading or self._current_id is None:
             return
@@ -2535,18 +2672,9 @@ class MainWindow(QMainWindow):
         record.valve_max_sp   = self._f_valve_max_sp.text().strip()
 
         w: dict = {}
-        for (idx, fld), cb in self._phoenix_cbs.items():
-            w[f"p_{idx}_{fld}"] = cb.isChecked()
-        for (idx, fld), cb in self._bb_cbs.items():
-            w[f"b_{idx}_{fld}"] = cb.isChecked()
-        for (idx, fld), cb in self._acm_cbs.items():
-            w[f"acm_{idx}_{fld}"] = cb.isChecked()
-        for (idx, fld), cb in self._dhv_cbs.items():
-            w[f"dhv_{idx}_{fld}"] = cb.isChecked()
-        for (idx, fld), cb in self._pbc_l_cbs.items():
-            w[f"pbc_l_{idx}_{fld}"] = cb.isChecked()
-        for (idx, fld), cb in self._pbc_r_cbs.items():
-            w[f"pbc_r_{idx}_{fld}"] = cb.isChecked()
+        for cbs, prefix in self._wiring_boards():
+            for (idx, fld), cb in cbs.items():
+                w[f"{prefix}_{idx}_{fld}"] = cb.isChecked()
         record.wiring = w
         record.sash_sensor_mounted = self._sash_sensor_cb.isChecked()
 
@@ -2635,16 +2763,22 @@ class MainWindow(QMainWindow):
         app: QApplication = QApplication.instance()  # type: ignore[assignment]
         if app:
             apply_dark_theme(app) if dark else apply_light_theme(app)
-        QSettings("ATS Inc", self.APP_NAME).setValue("darkMode", "true" if dark else "false")
+        QSettings("ATS Inc", self.APP_NAME).setValue("darkMode", dark)
 
     def _restore_settings(self) -> None:
-        dark_on = QSettings("ATS Inc", self.APP_NAME).value("darkMode", "true") != "false"
+        s = QSettings("ATS Inc", self.APP_NAME)
+        dark_on = s.value("darkMode", True, type=bool)
         app: QApplication = QApplication.instance()  # type: ignore[assignment]
         if app:
             apply_dark_theme(app) if dark_on else apply_light_theme(app)
+        geom = s.value("geometry")
+        if geom:
+            self.restoreGeometry(geom)
 
     def closeEvent(self, event) -> None:
         QSettings("ATS Inc", self.APP_NAME).setValue("geometry", self.saveGeometry())
+        if hasattr(self, "_update_checker"):
+            self._update_checker.wait(2000)
         super().closeEvent(event)
 
     # ── Auto-updater ──────────────────────────────────────────────────────────

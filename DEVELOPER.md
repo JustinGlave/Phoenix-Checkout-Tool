@@ -54,7 +54,7 @@ PTT_Transparent_green.png  — Watermark / background logo
 | `project`, `ats_job_number`, `technician`, `description`, `model`, `date` | str | Header fields |
 | `valve_type` | str | See valve type table below — drives wiring panels, tab visibility, and export template |
 | `pass_fail` | str | `"Pass"` / `"Fail"` / `""` |
-| `emer_min`, `valve_min_sp`, `valve_max_sp` | str | CFM setpoints (hidden for PBC Room) |
+| `emer_min`, `valve_min_sp`, `valve_max_sp` | str | CFM setpoints (hidden for PBC Room; validated as integers 0–99999) |
 | `wiring` | dict | Keyed by prefix + index + field — see wiring key scheme below |
 | `sash_sensor_mounted` | bool | Sash sensor mounting checkbox (Fume Hood types only) |
 | `config` | dict | `{key}_cfm` and `{key}_notes` for each CONFIG_ROWS entry |
@@ -107,7 +107,7 @@ QMainWindow
 └── Central QWidget (QHBoxLayout)
     ├── Sidebar (fixed 270px)
     │   ├── + New Job / + New Checkout / + Batch Add buttons
-    │   ├── Search/filter QLineEdit (live filter by valve tag)
+    │   ├── Search/filter QLineEdit (matches tag, technician, description, valve type)
     │   └── QTreeWidget
     │       ├── Active jobs (bold) with checkout children (colored by pass/fail)
     │       └── Archived Jobs separator + archived job entries (gray italic)
@@ -139,7 +139,35 @@ QMainWindow
 | 1 | CSCP splitter: ACM panel (left) + DHV Black Box panel (right) | CSCP Fume Hood |
 | 2 | PBC splitter: TB1/DO/UIO left + Power/Comm/UIO right | PBC Room |
 
-Each wiring panel has **Check All** / **Clear All** buttons at the top that toggle all non-factory checkboxes in that panel.
+Each wiring panel has **Check All** / **Clear All** buttons at the top. These guard `_loading = True` around all checkbox mutations, then fire a single `_on_any_change()` — no N debounce restarts.
+
+---
+
+## Key Patterns
+
+### Save debounce
+`_on_any_change()` → `_save_timer.start(350ms)` → `_save_current()`. When switching records in the tree, `_on_tree_changed` flushes any pending save before loading the new record:
+```python
+if self._save_timer.isActive():
+    self._save_timer.stop()
+    self._save_current()
+```
+
+### Load guard
+`_load_record` sets `self._loading = True` before writing to any widget and `False` when done. `_on_any_change()` returns immediately if `_loading` is set, preventing save-on-load loops. All wiring checkboxes additionally use `blockSignals(True/False)` during load.
+
+### Wiring boards helper
+`_wiring_boards()` returns a list of `(checkbox_dict, key_prefix)` tuples for all six wiring panels. Used by both `_load_record` and `_save_current` to eliminate repetition:
+```python
+for cbs, prefix in self._wiring_boards():
+    for (idx, fld), cb in cbs.items():
+        cb.blockSignals(True)
+        cb.setChecked(w.get(f"{prefix}_{idx}_{fld}", False))
+        cb.blockSignals(False)
+```
+
+### Checkout panel helper
+`_build_checkouts_panel(records, show_type=False)` builds the shared row list widget used by both `_populate_archived_panel` (archived summary) and `_populate_job_panel` (active job summary). The only difference is `show_type=True` for the active job view adds a valve type column.
 
 ---
 
@@ -168,10 +196,45 @@ All fill functions use `_w(ws, row, col, value)` which writes to a cell without 
 `_check_export_issues(records)` returns a list of warning strings for:
 - Missing valve tag
 - No pass/fail result
-- No technician
+- No technician name
 - Notes exceeding `NOTES_MAX_LINES` (will be truncated in template)
 
-Called before file dialog in `_export_checkout` and `_export_job`. User can proceed or cancel.
+All field access uses `(field or "").strip()` guards to handle `None` safely. Called before the file dialog in `_export_checkout` and `_export_job`; user can proceed or cancel.
+
+---
+
+## Embedded Points Lists
+
+BACnet point reference data is embedded directly in `checkout_tool_gui.py` — no external files required. Structure:
+
+```python
+_POINTS_LIST_DATA: dict[str, tuple[list[str], list[tuple]]] = {
+    "ACM Points List":    (_POINTS_HEADERS,     [...]),
+    "FHD500 Points List": (_POINTS_HEADERS,     [...]),
+    "PBC Points List":    (_PBC_POINTS_HEADERS, _PBC_ROWS),
+    "RPI Points List":    (_POINTS_HEADERS,     _RPI_ROWS),
+}
+```
+
+- `_POINTS_HEADERS = ["Type", "ID", "Name", "Unit", "Function", "Access"]` — used by ACM, FHD500, RPI
+- `_PBC_POINTS_HEADERS = ["Type", "ID", "Name", "Category", "Unit", "Access"]` — PBC has a "Category" grouping column ("Lab Zone", "LoSEA Valve", etc.) in place of "Function"
+
+`_open_points_list(title)` looks up `(headers, rows)` from the dict and builds a read-only `QTableWidget` dialog directly — no file I/O, no openpyxl dependency for this feature.
+
+To add or update a points list, edit the relevant constant in the `# ── Embedded BACnet points list data ──` section near the top of `checkout_tool_gui.py`.
+
+---
+
+## Settings (QSettings)
+
+All settings use `QSettings("ATS Inc", APP_NAME)`:
+
+| Key | Type | Purpose |
+|-----|------|---------|
+| `darkMode` | bool | Dark/light theme preference |
+| `geometry` | QByteArray | Window size and position |
+
+Settings are read at startup in `_restore_settings()` and written in `_toggle_dark_mode()` and `closeEvent()`.
 
 ---
 
@@ -210,6 +273,10 @@ GITHUB_REPO    = "Phoenix-Checkout-Tool"
 ZIP_ASSET_NAME = "PhoenixCheckoutTool.zip"
 EXE_NAME       = "PhoenixCheckoutTool.exe"
 ```
+
+- `check_for_update()` — safe to call from a background thread; catches all exceptions and returns `None` on failure
+- `download_and_apply()` — downloads to a temp file, verifies size against `Content-Length`, then launches a batch script that waits for the process to exit before overwriting the exe and restarting
+- The `_UpdateChecker` QThread is joined with `wait(2000)` in `closeEvent` to prevent orphaned threads on quit
 
 The zip must contain only the exe (not the full folder). `build.bat` produces this correctly.
 
