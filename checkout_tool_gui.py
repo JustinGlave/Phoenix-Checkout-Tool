@@ -669,7 +669,7 @@ class BatchCheckoutDialog(QDialog):
         self._date.setDisplayFormat("yyyy-MM-dd")
 
         self._preview = QLabel("")
-        self._preview.setStyleSheet("color: #3b82f6; font-size: 10pt;")
+        self._preview.setObjectName("TagPreview")
         self._preview.setWordWrap(True)
 
         form = QFormLayout()
@@ -1001,10 +1001,7 @@ class MainWindow(QMainWindow):
             badge = QLabel(num)
             badge.setFixedSize(38, 38)
             badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            badge.setStyleSheet(
-                "background:#1e3a8a; color:white; border-radius:19px;"
-                "font-weight:700; font-size:13pt;"
-            )
+            badge.setObjectName("StepBadge")
             card_lay.addWidget(badge, alignment=Qt.AlignmentFlag.AlignTop)
 
             text_col = QVBoxLayout()
@@ -1054,10 +1051,7 @@ class MainWindow(QMainWindow):
         arch_badge = QLabel("ARCHIVED")
         arch_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
         arch_badge.setFixedHeight(32)
-        arch_badge.setStyleSheet(
-            "background:#6b4c00; color:#f0b429; border-radius:8px;"
-            "font-weight:700; font-size:10pt; padding:0 10px;"
-        )
+        arch_badge.setObjectName("ArchivedBadge")
         hdr_lay.addWidget(arch_badge)
 
         restore_btn = QPushButton("Restore Job")
@@ -1129,11 +1123,7 @@ class MainWindow(QMainWindow):
                 pf_lbl = QLabel(record.pass_fail.upper())
                 pf_lbl.setFixedWidth(48)
                 pf_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                color = "#10b981" if record.pass_fail == "Pass" else "#ef4444"
-                pf_lbl.setStyleSheet(
-                    f"background:{color}; color:white; border-radius:5px;"
-                    "font-weight:700; font-size:9pt;"
-                )
+                pf_lbl.setObjectName("PassBadge" if record.pass_fail == "Pass" else "FailBadge")
                 row_lay.addWidget(pf_lbl)
             else:
                 spacer = QWidget()
@@ -1158,7 +1148,7 @@ class MainWindow(QMainWindow):
             if record is not records[-1]:
                 sep = QWidget()
                 sep.setFixedHeight(1)
-                sep.setStyleSheet("background: rgba(128,128,128,60);")
+                sep.setObjectName("RowSep")
                 panel_lay.addWidget(sep)
 
         return panel
@@ -2486,7 +2476,9 @@ class MainWindow(QMainWindow):
             self._hdr_tag.setText("Select a job or checkout")
             self._hdr_sub.setText("")
             self._hdr_badge.setText("")
-            self._hdr_badge.setStyleSheet("")
+            self._hdr_badge.setObjectName("")
+            self._hdr_badge.style().unpolish(self._hdr_badge)
+            self._hdr_badge.style().polish(self._hdr_badge)
             self._loading = False
             return
 
@@ -2563,19 +2555,15 @@ class MainWindow(QMainWindow):
     def _refresh_badge(self, pf: str) -> None:
         if pf == "Pass":
             self._hdr_badge.setText("PASS")
-            self._hdr_badge.setStyleSheet(
-                "background:#10b981; color:white; border-radius:8px;"
-                "font-weight:700; font-size:11pt;"
-            )
+            self._hdr_badge.setObjectName("PassBadge")
         elif pf == "Fail":
             self._hdr_badge.setText("FAIL")
-            self._hdr_badge.setStyleSheet(
-                "background:#ef4444; color:white; border-radius:8px;"
-                "font-weight:700; font-size:11pt;"
-            )
+            self._hdr_badge.setObjectName("FailBadge")
         else:
             self._hdr_badge.setText("")
-            self._hdr_badge.setStyleSheet("")
+            self._hdr_badge.setObjectName("")
+        self._hdr_badge.style().unpolish(self._hdr_badge)
+        self._hdr_badge.style().polish(self._hdr_badge)
 
     # Keys of config/verify rows that are Fume Hood-only
     _FH_ONLY_CFG        = {"hood_sash_min", "hood_sash_max"}
