@@ -479,8 +479,13 @@ class _BgWidget(QWidget):
 
     def __init__(self) -> None:
         super().__init__()
-        path = _resource_path("green.png")
-        self._src = QPixmap(path) if os.path.exists(path) else QPixmap()
+        for _name in ("green.png", "PTT_Transparent_green.png"):
+            path = _resource_path(_name)
+            if os.path.exists(path):
+                self._src = QPixmap(path)
+                break
+        else:
+            self._src = QPixmap()
 
         self._overlay = QLabel(self)
         self._overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)

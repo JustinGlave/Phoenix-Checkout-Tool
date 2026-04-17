@@ -168,7 +168,7 @@ if not errorlevel 1 (
     timeout /t 1 /nobreak >nul
     goto wait
 )
-powershell -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; $zip = [System.IO.Compression.ZipFile]::OpenRead('{zip_str}'); $entry = $zip.Entries | Where-Object {{ $_.Name -eq '{EXE_NAME}' }} | Select-Object -First 1; if ($entry) {{ [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, '{exe_str}', $true) }}; $zip.Dispose()"
+powershell -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; $tmp = Join-Path $env:TEMP ([System.IO.Path]::GetRandomFileName()); [System.IO.Compression.ZipFile]::ExtractToDirectory('{zip_str}', $tmp); Copy-Item -Path (Join-Path $tmp '{EXE_NAME}') -Destination '{exe_str}' -Force; Remove-Item -Path $tmp -Recurse -Force"
 del "{zip_str}"
 start "" "{exe_str}"
 del "%~f0"
