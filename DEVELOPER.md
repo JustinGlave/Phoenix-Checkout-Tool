@@ -75,6 +75,11 @@ All wiring dicts for all panel types are saved on every record regardless of cur
 
 Data is persisted at `%APPDATA%\ATS Inc\Phoenix Valve Checkout Tool\data.json`.
 
+### Data Safety
+- `_save()` writes to a `.tmp` file first, then `os.replace()` atomically renames it — prevents corruption on crash.
+- `_load()` skips individual bad records rather than failing the entire load, using per-record `try/except` and `__dataclass_fields__` filtering.
+- JSON schema versioning via `"version": 1` key for future migration support.
+
 ---
 
 ## Valve Type Behavior Matrix
@@ -86,6 +91,13 @@ Data is persisted at `%APPDATA%\ATS Inc\Phoenix Valve Checkout Tool\data.json`.
 | CSCP Fume Hood | 1 — CSCP | — | DHV panel | Yes | Yes | Yes |
 | PBC Room | 2 — PBC | — | Hidden | Yes | Hidden | Hidden |
 
+### Verification row visibility
+| Row key | Visible for |
+|---------|-------------|
+| `face_velocity`, `sash_height_alarm`, `sash_sensor_output`, `emergency_exhaust` | Fume Hood types only (Celeris FH + CSCP FH) |
+| `mute_function` | Celeris Fume Hood only |
+| `low_flow_alarm`, `jam_alarm` | All types (except hidden for PBC Room via tab) |
+
 ---
 
 ## Main UI Structure
@@ -95,6 +107,7 @@ QMainWindow
 └── Central QWidget (QHBoxLayout)
     ├── Sidebar (fixed 270px)
     │   ├── + New Job / + New Checkout / + Batch Add buttons
+    │   ├── Search/filter QLineEdit (live filter by valve tag)
     │   └── QTreeWidget
     │       ├── Active jobs (bold) with checkout children (colored by pass/fail)
     │       └── Archived Jobs separator + archived job entries (gray italic)
@@ -105,9 +118,9 @@ QMainWindow
         │   │   ├── Tab 0: General (fields + valve type dropdown)
         │   │   ├── Tab 1: Wiring (QStackedWidget — 3 panel sets, see below)
         │   │   ├── Tab 2: Config & Verification
-        │   │   └── Tab 3: Notes
+        │   │   └── Tab 3: Notes (template snippet dropdown + plain text edit)
         │   ├── Page 2: Archived job summary panel (read-only checkout list)
-        │   └── Page 3: Active job summary panel (live checkout list)
+        │   └── Page 3: Active job summary panel (live checkout list + progress bar)
         └── Update banner (hidden until update available)
 ```
 
@@ -125,6 +138,8 @@ QMainWindow
 | 0 | Celeris splitter: Phoenix panel (left) + Black Box panel (right) | Fume Hood, GEX, MAV, Snorkel, Canopy, Draw Down Bench, Gas Cabinet |
 | 1 | CSCP splitter: ACM panel (left) + DHV Black Box panel (right) | CSCP Fume Hood |
 | 2 | PBC splitter: TB1/DO/UIO left + Power/Comm/UIO right | PBC Room |
+
+Each wiring panel has **Check All** / **Clear All** buttons at the top that toggle all non-factory checkboxes in that panel.
 
 ---
 
@@ -145,6 +160,18 @@ Row-map dicts (enumerate index → Excel row number):
 - `_PBC_L_ROW` / `_PBC_R_ROW` — PBC left (cols D/E) and right (cols J/K) wiring rows
 
 All fill functions use `_w(ws, row, col, value)` which writes to a cell without touching its formatting (preserves template styles).
+
+### Summary sheet
+`export_records(records, path, summary_title="")` — when `summary_title` is provided and more than one record is exported, a **Summary** sheet is inserted as the first sheet listing all records with valve tag, type, pass/fail, technician, date, and first line of notes.
+
+### Export validation
+`_check_export_issues(records)` returns a list of warning strings for:
+- Missing valve tag
+- No pass/fail result
+- No technician
+- Notes exceeding `NOTES_MAX_LINES` (will be truncated in template)
+
+Called before file dialog in `_export_checkout` and `_export_job`. User can proceed or cancel.
 
 ---
 

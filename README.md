@@ -9,16 +9,21 @@ A Windows desktop application for ATS Inc. field technicians to create, track, a
 - **Two product lines supported**
   - **Phoenix Celeris** — Fume Hood, GEX, MAV, Snorkel, Canopy, Draw Down Bench, Gas Cabinet
   - **CSCP (Critical Spaces Control Platform)** — ACM Fume Hood, PBC Room controller
-- **Job management** — group checkout sheets by job number and project name; view a live summary of all checkouts when a job is selected
+- **Job management** — group checkout sheets by job number and project name; view a live summary of all checkouts when a job is selected, including a completion progress bar
 - **Checkout sheets** — per-type wiring panels, configuration setpoints, verification results, and notes for each valve or controller
   - Celeris Fume Hood: Phoenix Air Valve wiring (TB1–TB7) + Black Box wiring + sash sensor
   - Celeris GEX / MAV / Snorkel / Canopy / Draw Down Bench / Gas Cabinet: Phoenix wiring only
   - CSCP ACM Fume Hood: ACM connector wiring (P10–P80) + DHV Black Box wiring + sash sensor
   - CSCP PBC Room: full PBC terminal wiring (TB1 Inputs / DO Relay / DO SSR / UIO + Power / Comm / UIO right panel)
+- **Wiring Check All / Clear All** — quickly check or clear all non-factory wiring rows in any panel
+- **Search / filter** — live search box above the job tree to filter checkouts by tag name
 - **Batch creation** — generate multiple checkout sheets at once from a starting valve tag
-- **Excel export** — exports to the correct formatted template for each valve type, preserving all cell formatting; one sheet per valve, multi-sheet for whole jobs
+- **Excel export** — exports to the correct formatted template for each valve type, preserving all cell formatting; one sheet per valve, multi-sheet for whole jobs (includes a Summary sheet)
+- **Export validation** — warns before export if any record is missing required fields or has oversized notes
+- **Notes templates** — quick-insert dropdown with common commissioning note snippets
 - **Points Lists** — quick-access reference tables under **Tools → Points Lists** for ACM, FHD500, PBC, and RPI BACnet point lists
 - **Archive / restore** — close out completed jobs without deleting them; restore at any time
+- **Backup Data** — one-click backup of your data file via **File → Backup Data**
 - **Auto-update** — checks GitHub Releases on startup and installs updates in one click
 - **Dark / light mode** — toggled via View menu, preference saved between sessions
 
@@ -52,7 +57,7 @@ Download the latest release from the [Releases page](https://github.com/JustinGl
 ## Usage
 
 ### Create a Job
-Click **+ New Job** in the sidebar or press `Ctrl+J`. Enter a job number and job name. Selecting a job shows a summary of all its checkout sheets with pass/fail status.
+Click **+ New Job** in the sidebar or press `Ctrl+J`. Enter a job number and job name. Selecting a job shows a summary of all its checkout sheets with pass/fail status and a completion progress bar.
 
 ### Add a Checkout Sheet
 Select a job, then click **+ New Checkout** or press `Ctrl+N`. Choose the valve type from the dropdown — the wiring panel, config/verify rows, and export template update automatically.
@@ -60,14 +65,26 @@ Select a job, then click **+ New Checkout** or press `Ctrl+N`. Choose the valve 
 ### Batch Add Checkout Sheets
 Click **+ Batch Add** or press `Ctrl+B`. Enter a starting tag (e.g. `MAV-1-100`) and a count — the tool generates sheets `MAV-1-100` through `MAV-1-{N}` sharing the same technician, description, and date.
 
+### Search / Filter
+Type in the search box above the job tree to instantly filter checkouts by valve tag. Jobs with no matching children are hidden automatically.
+
+### Wiring Panels
+Use **Check All** / **Clear All** at the top of each wiring panel to quickly mark or clear all non-factory wiring rows.
+
+### Notes Templates
+On the **Notes** tab, use the dropdown to insert common commissioning snippets. The selected snippet is appended to any existing notes.
+
 ### Export to Excel
-Right-click any checkout or job in the sidebar and choose **Export to Excel**, or use the **File** menu. Each valve type exports to its own formatted template.
+Right-click any checkout or job in the sidebar and choose **Export to Excel**, or use the **File** menu. The tool warns you if any records have missing fields before writing. Job exports include a **Summary** sheet listing all checkouts.
 
 ### Points Lists
 Go to **Tools → Points Lists** and select ACM, FHD500, PBC, or RPI to view the BACnet points list in a popup table.
 
 ### Archive a Job
 Right-click a job and choose **Archive Job**. The job moves to the **Archived Jobs** section. Right-click an archived job to **Restore** or **Delete** it permanently.
+
+### Backup Data
+Go to **File → Backup Data** to save a timestamped copy of your data file to any location.
 
 ---
 

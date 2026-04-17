@@ -87,28 +87,48 @@ class CheckoutStore:
 
     # ── Persistence ────────────────────────────────────────────────────────────
 
+    _DATA_VERSION = 1
+
     def _load(self) -> None:
         if not os.path.exists(DATA_FILE):
             return
         try:
             with open(DATA_FILE, "r", encoding="utf-8") as fh:
                 raw = json.load(fh)
-            self._jobs    = [Job(**j)            for j in raw.get("jobs",    [])]
-            self._records = [ValveCheckout(**r)  for r in raw.get("records", [])]
-        except (OSError, ValueError, KeyError, TypeError):
-            self._jobs    = []
-            self._records = []
+        except (OSError, ValueError):
+            return
+
+        jobs: list[Job] = []
+        for j in raw.get("jobs", []):
+            try:
+                jobs.append(Job(**{k: v for k, v in j.items() if k in Job.__dataclass_fields__}))
+            except Exception:
+                pass  # skip individual bad records, preserve the rest
+
+        records: list[ValveCheckout] = []
+        for r in raw.get("records", []):
+            try:
+                records.append(ValveCheckout(**{k: v for k, v in r.items()
+                                                if k in ValveCheckout.__dataclass_fields__}))
+            except Exception:
+                pass
+
+        self._jobs    = jobs
+        self._records = records
 
     def _save(self) -> None:
-        with open(DATA_FILE, "w", encoding="utf-8") as fh:
+        tmp = DATA_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
             json.dump(
                 {
+                    "version": self._DATA_VERSION,
                     "jobs":    [asdict(j) for j in self._jobs],
                     "records": [asdict(r) for r in self._records],
                 },
                 fh,
                 indent=2,
             )
+        os.replace(tmp, DATA_FILE)  # atomic — avoids corruption on crash
 
     # ── Job API ────────────────────────────────────────────────────────────────
 

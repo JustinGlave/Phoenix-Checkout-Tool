@@ -7,10 +7,14 @@ or more ValveCheckout records (one sheet per record), and saves to a new file.
 
 from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
-from openpyxl import load_workbook
+from datetime import date as _date
+
+from openpyxl import load_workbook, Workbook
+from openpyxl.styles import Font, Alignment
 from openpyxl.worksheet.worksheet import Worksheet
 
 from checkout_tool_backend import ValveCheckout
@@ -421,21 +425,67 @@ def fill_sheet_pbc_room(ws: Worksheet, record: ValveCheckout) -> None:
 # Types that use the GEX/MAV fill function
 _GEX_MAV_TYPES = {"GEX", "MAV"}
 
+# Maximum note lines per template (all current templates have 5 rows)
+NOTES_MAX_LINES = 5
+
+
+def _fill_one(ws: Worksheet, record: ValveCheckout) -> None:
+    if record.valve_type in _GEX_MAV_TYPES:
+        fill_sheet_gex_mav(ws, record)
+    elif record.valve_type == "CSCP Fume Hood":
+        fill_sheet_cscp_fh(ws, record)
+    elif record.valve_type == "PBC Room":
+        fill_sheet_pbc_room(ws, record)
+    else:
+        fill_sheet(ws, record)
+
+
+def _write_summary_sheet(wb, records: list[ValveCheckout], title: str) -> None:
+    """Prepend a formatted summary sheet listing all checkouts in the job."""
+    ws = wb.create_sheet("Summary", 0)
+
+    ws.cell(1, 1, title).font = Font(bold=True, size=13)
+    ws.cell(2, 1, f"Exported: {_date.today().isoformat()}")
+
+    headers = ["#", "Valve Tag", "Type", "Pass / Fail", "Technician", "Date", "Notes"]
+    for col, h in enumerate(headers, 1):
+        cell = ws.cell(4, col, h)
+        cell.font = Font(bold=True)
+
+    for i, r in enumerate(records, 1):
+        note_first = (r.notes or "").split("\n")[0][:120]
+        for col, val in enumerate(
+            [i, r.valve_tag, r.valve_type, r.pass_fail, r.technician, r.date, note_first], 1
+        ):
+            ws.cell(4 + i, col, val)
+
+    for col, width in zip("ABCDEFG", [5, 20, 20, 12, 22, 12, 55]):
+        ws.column_dimensions[col].width = width
+
 
 # ── Public export entry point ─────────────────────────────────────────────────
 
-def export_records(records: list[ValveCheckout], output_path: str) -> None:
+def export_records(records: list[ValveCheckout], output_path: str,
+                   summary_title: str = "") -> None:
     """
     Export one or more records to output_path (.xlsx).
-    Produces one worksheet per record, each formatted like its valve-type template.
+    Produces one worksheet per record plus an optional Summary sheet.
+
+    summary_title: when non-empty and there are multiple records, a Summary
+                   sheet is prepended listing all checkouts.
     """
     if not records:
         raise ValueError("No records provided for export.")
 
-    template_name = _VALVE_TYPE_TEMPLATE.get(
-        records[0].valve_type, TEMPLATE_NAME
-    )
+    template_name = _VALVE_TYPE_TEMPLATE.get(records[0].valve_type, TEMPLATE_NAME)
     template_path = _resource_path(template_name)
+
+    if not os.path.exists(template_path):
+        raise FileNotFoundError(
+            f"Template file '{template_name}' not found.\n"
+            "Please reinstall the application to restore bundled templates."
+        )
+
     wb = load_workbook(template_path)
     template_ws = wb.active
 
@@ -444,13 +494,9 @@ def export_records(records: list[ValveCheckout], output_path: str) -> None:
         sheets.append(wb.copy_worksheet(template_ws))
 
     for ws, record in zip(sheets, records):
-        if record.valve_type in _GEX_MAV_TYPES:
-            fill_sheet_gex_mav(ws, record)
-        elif record.valve_type == "CSCP Fume Hood":
-            fill_sheet_cscp_fh(ws, record)
-        elif record.valve_type == "PBC Room":
-            fill_sheet_pbc_room(ws, record)
-        else:
-            fill_sheet(ws, record)
+        _fill_one(ws, record)
+
+    if summary_title and len(records) > 1:
+        _write_summary_sheet(wb, records, summary_title)
 
     wb.save(output_path)

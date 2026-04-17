@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
 import sys
 from pathlib import Path
 from typing import Optional
@@ -16,13 +17,13 @@ from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateEdit, QDialog,
     QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
-    QPlainTextEdit, QPushButton, QScrollArea, QSpinBox, QSplitter,
+    QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSpinBox, QSplitter,
     QStackedWidget, QTabWidget, QTableWidget, QTableWidgetItem, QTreeWidget,
     QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
-from checkout_tool_backend import CheckoutStore, Job, ValveCheckout
-from checkout_export import export_records
+from checkout_tool_backend import CheckoutStore, Job, ValveCheckout, DATA_FILE
+from checkout_export import export_records, NOTES_MAX_LINES
 from version import __version__
 import updater
 
@@ -226,6 +227,20 @@ VERIFY_ROWS: list[tuple[str, str]] = [
     ("jam_alarm",          "JAM Alarm"),
     ("emergency_exhaust",  "Emergency Exhaust Override"),
     ("mute_function",      "Mute Function"),
+]
+
+_NOTES_TEMPLATES: list[tuple[str, str]] = [
+    ("— Insert snippet —", ""),
+    ("All verified",              "All points verified. Clean install."),
+    ("Standard commissioning",   "Standard commissioning complete. All wiring confirmed."),
+    ("BACnet confirmed",         "BACnet communication confirmed at controller."),
+    ("Low flow verified",        "Low flow alarm triggered and verified."),
+    ("Sash sensor OK",           "Sash sensor calibrated and verified."),
+    ("JAM alarm failed",         "Unit failed JAM alarm test. Contractor to re-check actuator wiring."),
+    ("Not yet commissioned",     "Wiring complete. Unit not yet commissioned — pending controls startup."),
+    ("Emergency exhaust OK",     "Emergency exhaust override verified from BAS."),
+    ("RS485 issue",              "BACnet MS/TP communication not established. Verify device address and baud rate."),
+    ("Pending sash calibration", "Sash sensor installed. Calibration pending — coordinate with hood manufacturer."),
 ]
 
 # Pass/Fail tree item colors (work on both light and dark backgrounds)
@@ -605,6 +620,10 @@ class MainWindow(QMainWindow):
         export_job_act.triggered.connect(self._on_export_job)
         file_menu.addAction(export_job_act)
         file_menu.addSeparator()
+        backup_act = QAction("Backup Data\u2026", self)
+        backup_act.triggered.connect(self._backup_data)
+        file_menu.addAction(backup_act)
+        file_menu.addSeparator()
         exit_act = QAction("Exit", self)
         exit_act.triggered.connect(self.close)
         file_menu.addAction(exit_act)
@@ -683,6 +702,12 @@ class MainWindow(QMainWindow):
         self._batch_btn.setEnabled(False)
         batch_btn_row.addWidget(self._batch_btn)
         lay.addLayout(batch_btn_row)
+
+        self._search_edit = QLineEdit()
+        self._search_edit.setPlaceholderText("Search checkouts\u2026")
+        self._search_edit.setClearButtonEnabled(True)
+        self._search_edit.textChanged.connect(self._apply_tree_filter)
+        lay.addWidget(self._search_edit)
 
         self._tree = QTreeWidget()
         self._tree.setHeaderHidden(True)
@@ -963,7 +988,7 @@ class MainWindow(QMainWindow):
 
         hdr = QWidget()
         hdr.setObjectName("Panel")
-        hdr.setFixedHeight(72)
+        hdr.setFixedHeight(88)
         hdr_lay = QHBoxLayout(hdr)
         hdr_lay.setContentsMargins(20, 10, 20, 10)
         hdr_lay.setSpacing(20)
@@ -974,8 +999,13 @@ class MainWindow(QMainWindow):
         self._job_hdr_title.setObjectName("ProjectTitle")
         self._job_hdr_sub = QLabel("")
         self._job_hdr_sub.setObjectName("ProjectSubtitle")
+        self._job_progress = QProgressBar()
+        self._job_progress.setRange(0, 100)
+        self._job_progress.setTextVisible(True)
+        self._job_progress.setFixedHeight(14)
         text_col.addWidget(self._job_hdr_title)
         text_col.addWidget(self._job_hdr_sub)
+        text_col.addWidget(self._job_progress)
         hdr_lay.addLayout(text_col)
         hdr_lay.addStretch()
 
@@ -1008,13 +1038,17 @@ class MainWindow(QMainWindow):
         self._job_hdr_title.setText(_job_label(job))
 
         records = self._store.records_for_job(job_id)
-        total  = len(records)
-        passes = sum(1 for r in records if r.pass_fail == "Pass")
-        fails  = sum(1 for r in records if r.pass_fail == "Fail")
+        total    = len(records)
+        passes   = sum(1 for r in records if r.pass_fail == "Pass")
+        fails    = sum(1 for r in records if r.pass_fail == "Fail")
+        reviewed = passes + fails
         self._job_hdr_sub.setText(
             f"{total} checkout{'s' if total != 1 else ''}   \u2022   "
             f"{passes} passed   \u2022   {fails} failed"
         )
+        pct = int(reviewed / total * 100) if total else 0
+        self._job_progress.setValue(pct)
+        self._job_progress.setFormat(f"{reviewed}/{total} reviewed  ({pct}%)")
 
         # Clear previous rows (keep the trailing stretch)
         while self._job_list_layout.count() > 1:
@@ -1335,11 +1369,26 @@ class MainWindow(QMainWindow):
         panel_widget.setObjectName("Panel")
         p_lay = QVBoxLayout(panel_widget)
         p_lay.setContentsMargins(12, 12, 12, 12)
-        p_lay.setSpacing(8)
+        p_lay.setSpacing(6)
 
         title_lbl = QLabel(title)
         title_lbl.setObjectName("SectionTitle")
+
+        _cbs = checkboxes   # capture for button closures
+        btn_bar = QHBoxLayout()
+        btn_bar.setSpacing(4)
+        btn_bar.addStretch()
+        check_all_btn = QPushButton("Check All")
+        check_all_btn.setFixedHeight(22)
+        check_all_btn.clicked.connect(lambda: [cb.setChecked(True) for cb in _cbs.values()])
+        clear_all_btn = QPushButton("Clear All")
+        clear_all_btn.setFixedHeight(22)
+        clear_all_btn.clicked.connect(lambda: [cb.setChecked(False) for cb in _cbs.values()])
+        btn_bar.addWidget(check_all_btn)
+        btn_bar.addWidget(clear_all_btn)
+
         p_lay.addWidget(title_lbl)
+        p_lay.addLayout(btn_bar)
         p_lay.addWidget(table, stretch=1)
 
         sash_cb = None
@@ -1477,6 +1526,11 @@ class MainWindow(QMainWindow):
         lbl = QLabel("Notes")
         lbl.setObjectName("SectionTitle")
         lay.addWidget(lbl)
+        self._notes_template_combo = QComboBox()
+        for label, _ in _NOTES_TEMPLATES:
+            self._notes_template_combo.addItem(label)
+        self._notes_template_combo.currentIndexChanged.connect(self._on_notes_template_selected)
+        lay.addWidget(self._notes_template_combo)
         self._notes_edit = QPlainTextEdit()
         self._notes_edit.textChanged.connect(self._on_any_change)
         lay.addWidget(self._notes_edit)
@@ -1554,6 +1608,10 @@ class MainWindow(QMainWindow):
 
         self._tree.blockSignals(False)
 
+        search = getattr(self, "_search_edit", None)
+        if search:
+            self._apply_tree_filter(search.text())
+
         if select_id:
             self._select_by_id(select_id)
         elif self._tree.topLevelItemCount() == 0:
@@ -1576,6 +1634,31 @@ class MainWindow(QMainWindow):
                     if cid == target_id:
                         self._tree.setCurrentItem(child)
                         return
+
+    def _apply_tree_filter(self, text: str) -> None:
+        q = text.strip().lower()
+        for i in range(self._tree.topLevelItemCount()):
+            job_item = self._tree.topLevelItem(i)
+            role = job_item.data(0, self._ROLE)
+            if role is None:
+                continue
+            kind, _ = role
+            if kind in ("separator", "archived_job"):
+                job_item.setHidden(bool(q))
+                continue
+            any_visible = False
+            for j in range(job_item.childCount()):
+                child = job_item.child(j)
+                hidden = bool(q) and q not in child.text(0).lower()
+                child.setHidden(hidden)
+                if not hidden:
+                    any_visible = True
+            if q:
+                job_item.setHidden(not any_visible)
+                if any_visible:
+                    job_item.setExpanded(True)
+            else:
+                job_item.setHidden(False)
 
     def _apply_item_color(self, item: QTreeWidgetItem, pass_fail: str) -> None:
         if pass_fail == "Pass":
@@ -2153,6 +2236,14 @@ class MainWindow(QMainWindow):
         record = self._store.get(record_id)
         if not record:
             return
+        issues = self._check_export_issues([record])
+        if issues:
+            msg = "Export warnings:\n\n" + "\n".join(issues) + "\n\nProceed anyway?"
+            if QMessageBox.question(
+                self, "Export Warnings", msg,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            ) != QMessageBox.StandardButton.Yes:
+                return
         default_name = f"{record.valve_tag or 'Checkout'}.xlsx"
         path, _ = QFileDialog.getSaveFileName(
             self, "Export Checkout", default_name,
@@ -2173,6 +2264,14 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "No Checkouts",
                                     "This job has no checkout records to export.")
             return
+        issues = self._check_export_issues(records)
+        if issues:
+            msg = "Export warnings:\n\n" + "\n".join(issues) + "\n\nProceed anyway?"
+            if QMessageBox.question(
+                self, "Export Warnings", msg,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            ) != QMessageBox.StandardButton.Yes:
+                return
         job = self._store.get_job(job_id)
         default_name = f"{job.job_number or job.job_name or 'Job'} Checkouts.xlsx"
         path, _ = QFileDialog.getSaveFileName(
@@ -2182,13 +2281,28 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            export_records(records, path)
+            summary_title = f"{job.job_number} \u2014 {job.job_name}" if job else ""
+            export_records(records, path, summary_title=summary_title)
             QMessageBox.information(
                 self, "Export Complete",
                 f"Exported {len(records)} checkout{'s' if len(records) != 1 else ''} to:\n{path}"
             )
         except Exception as exc:
             QMessageBox.critical(self, "Export Failed", str(exc))
+
+    def _check_export_issues(self, records: list) -> list[str]:
+        issues = []
+        for r in records:
+            tag = r.valve_tag or "(No Tag)"
+            if not r.valve_tag.strip():
+                issues.append(f"\u2022 {tag}: missing valve tag")
+            if not r.pass_fail:
+                issues.append(f"\u2022 {tag}: no Pass/Fail result set")
+            if not r.technician.strip():
+                issues.append(f"\u2022 {tag}: no technician name")
+            if r.notes and len(r.notes.split("\n")) > NOTES_MAX_LINES:
+                issues.append(f"\u2022 {tag}: notes exceed {NOTES_MAX_LINES} lines (will be truncated in export)")
+        return issues
 
     # ── Load / save record ────────────────────────────────────────────────────
 
@@ -2316,9 +2430,9 @@ class MainWindow(QMainWindow):
             self._hdr_badge.setStyleSheet("")
 
     # Keys of config/verify rows that are Fume Hood-only
-    _FH_ONLY_CFG  = {"hood_sash_min", "hood_sash_max"}
-    _FH_ONLY_VFY  = {"face_velocity", "sash_height_alarm", "sash_sensor_output",
-                     "emergency_exhaust", "mute_function"}
+    _FH_ONLY_CFG        = {"hood_sash_min", "hood_sash_max"}
+    _FH_ONLY_VFY        = {"face_velocity", "sash_height_alarm", "sash_sensor_output", "emergency_exhaust"}
+    _CELERIS_FH_ONLY_VFY = {"mute_function"}
 
     # General-tab form row indices for valve-specific SP fields
     _FORM_ROW_EMER_MIN   = 9
@@ -2384,7 +2498,10 @@ class MainWindow(QMainWindow):
         # ── Verification table — hide Fume Hood-only rows and resize ──────────
         visible_vfy = 0
         for r_idx, (key, _) in enumerate(VERIFY_ROWS):
-            hidden = (key in self._FH_ONLY_VFY) and not fume_hood
+            hidden = (
+                (key in self._FH_ONLY_VFY and not fume_hood) or
+                (key in self._CELERIS_FH_ONLY_VFY and not celeris_fh)
+            )
             self._vfy_table.setRowHidden(r_idx, hidden)
             if not hidden:
                 visible_vfy += 1
@@ -2475,6 +2592,33 @@ class MainWindow(QMainWindow):
         self._refresh_badge(record.pass_fail)
 
         self._loading = False
+
+    def _on_notes_template_selected(self, idx: int) -> None:
+        if idx == 0:
+            return
+        _, snippet = _NOTES_TEMPLATES[idx]
+        if snippet:
+            current = self._notes_edit.toPlainText()
+            sep = "\n" if current and not current.endswith("\n") else ""
+            self._notes_edit.setPlainText(current + sep + snippet)
+        self._notes_template_combo.blockSignals(True)
+        self._notes_template_combo.setCurrentIndex(0)
+        self._notes_template_combo.blockSignals(False)
+
+    def _backup_data(self) -> None:
+        from datetime import date as _date
+        default_name = f"Phoenix_Checkout_Backup_{_date.today().isoformat()}.json"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Backup Data", default_name,
+            "JSON File (*.json)"
+        )
+        if not path:
+            return
+        try:
+            shutil.copy2(DATA_FILE, path)
+            QMessageBox.information(self, "Backup Complete", f"Data backed up to:\n{path}")
+        except Exception as exc:
+            QMessageBox.critical(self, "Backup Failed", str(exc))
 
     # ── Misc actions ──────────────────────────────────────────────────────────
 
