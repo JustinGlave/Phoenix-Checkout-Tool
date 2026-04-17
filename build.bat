@@ -26,6 +26,7 @@ echo [1/3] Running PyInstaller...
 pyinstaller ^
     --onedir ^
     --windowed ^
+    --noconfirm ^
     --icon=%APP_ICON% ^
     --name=%APP_NAME% ^
     --add-data="%APP_ICON%;." ^
