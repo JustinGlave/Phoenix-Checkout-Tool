@@ -27,6 +27,44 @@ from checkout_export import export_records, NOTES_MAX_LINES
 from version import __version__
 import updater
 
+# ── Phoenix component helpers ─────────────────────────────────────────────────
+
+class PrimaryButton(QPushButton):
+    """Red primary-action button with pointer cursor and consistent height."""
+    def __init__(self, text: str, parent=None):
+        super().__init__(text, parent)
+        self.setMinimumHeight(36)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+
+class SecondaryButton(QPushButton):
+    """Blue secondary-action button."""
+    def __init__(self, text: str, parent=None):
+        super().__init__(text, parent)
+        self.setObjectName("secondaryButton")
+        self.setMinimumHeight(36)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+
+class TertiaryButton(QPushButton):
+    """Outline tertiary button for low-emphasis actions."""
+    def __init__(self, text: str, parent=None):
+        super().__init__(text, parent)
+        self.setObjectName("tertiaryButton")
+        self.setMinimumHeight(36)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+
+
+class _PhoenixTable(QTableWidget):
+    """Read-only data table with standard Phoenix styling defaults."""
+    def __init__(self, rows: int, cols: int, parent=None):
+        super().__init__(rows, cols, parent)
+        self.verticalHeader().setVisible(False)
+        self.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
+        self.setAlternatingRowColors(True)
+
 
 # ── Wiring structure constants ────────────────────────────────────────────────
 # Each entry: (section_title, row_num, point, descriptor, is_factory)
@@ -888,9 +926,9 @@ class MainWindow(QMainWindow):
 
         btn_row = QHBoxLayout()
         btn_row.setSpacing(8)
-        new_job_btn = QPushButton("+ New Job")
+        new_job_btn = PrimaryButton("+ New Job")
         new_job_btn.clicked.connect(self._on_new_job)
-        self._new_checkout_btn = QPushButton("+ New Checkout")
+        self._new_checkout_btn = PrimaryButton("+ New Checkout")
         self._new_checkout_btn.clicked.connect(self._on_new_checkout)
         self._new_checkout_btn.setEnabled(False)
         btn_row.addWidget(new_job_btn)
@@ -899,7 +937,7 @@ class MainWindow(QMainWindow):
 
         batch_btn_row = QHBoxLayout()
         batch_btn_row.setSpacing(8)
-        self._batch_btn = QPushButton("+ Batch Add")
+        self._batch_btn = SecondaryButton("+ Batch Add")
         self._batch_btn.clicked.connect(self._on_batch_add)
         self._batch_btn.setEnabled(False)
         batch_btn_row.addWidget(self._batch_btn)
@@ -1221,7 +1259,7 @@ class MainWindow(QMainWindow):
         hdr_lay.addLayout(text_col)
         hdr_lay.addStretch()
 
-        export_btn = QPushButton("Export All\u2026")
+        export_btn = SecondaryButton("Export All\u2026")
         export_btn.clicked.connect(self._on_export_job)
         hdr_lay.addWidget(export_btn)
 
@@ -1535,20 +1573,21 @@ class MainWindow(QMainWindow):
             self._loading = False
             self._on_any_change()
 
-        btn_bar = QHBoxLayout()
-        btn_bar.setSpacing(4)
-        btn_bar.addStretch()
-        check_all_btn = QPushButton("Check All")
-        check_all_btn.setFixedHeight(22)
+        check_all_btn = SecondaryButton("Check All")
+        check_all_btn.setFixedHeight(36)
         check_all_btn.clicked.connect(lambda: _bulk_set(True))
-        clear_all_btn = QPushButton("Clear All")
-        clear_all_btn.setFixedHeight(22)
+        clear_all_btn = SecondaryButton("Clear All")
+        clear_all_btn.setFixedHeight(36)
         clear_all_btn.clicked.connect(lambda: _bulk_set(False))
-        btn_bar.addWidget(check_all_btn)
-        btn_bar.addWidget(clear_all_btn)
 
-        p_lay.addWidget(title_lbl)
-        p_lay.addLayout(btn_bar)
+        hdr_row = QHBoxLayout()
+        hdr_row.setSpacing(8)
+        hdr_row.addWidget(title_lbl)
+        hdr_row.addStretch()
+        hdr_row.addWidget(check_all_btn)
+        hdr_row.addWidget(clear_all_btn)
+
+        p_lay.addLayout(hdr_row)
         p_lay.addWidget(table, stretch=1)
 
         sash_cb = None
@@ -1585,13 +1624,8 @@ class MainWindow(QMainWindow):
         cfg_lbl.setObjectName("SectionTitle")
         cfg_lay.addWidget(cfg_lbl)
 
-        self._cfg_table = QTableWidget(len(CONFIG_ROWS), 3)
+        self._cfg_table = _PhoenixTable(len(CONFIG_ROWS), 3)
         self._cfg_table.setHorizontalHeaderLabels(["Task", "CFM", "Height / Notes"])
-        self._cfg_table.verticalHeader().setVisible(False)
-        self._cfg_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._cfg_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-        self._cfg_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._cfg_table.setAlternatingRowColors(True)
         ch = self._cfg_table.horizontalHeader()
         ch.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         ch.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
@@ -1633,18 +1667,13 @@ class MainWindow(QMainWindow):
         vfy_lbl.setObjectName("SectionTitle")
         vfy_lay.addWidget(vfy_lbl)
 
-        self._vfy_table = QTableWidget(len(VERIFY_ROWS), 3)
+        self._vfy_table = _PhoenixTable(len(VERIFY_ROWS), 3)
         self._vfy_table.setHorizontalHeaderLabels(["Task", "Result", "Notes"])
-        self._vfy_table.verticalHeader().setVisible(False)
-        self._vfy_table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self._vfy_table.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-        self._vfy_table.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self._vfy_table.setAlternatingRowColors(True)
         vh = self._vfy_table.horizontalHeader()
         vh.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
-        vh.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        vh.setSectionResizeMode(1, QHeaderView.ResizeMode.Fixed)
         vh.setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)
-        self._vfy_table.setColumnWidth(1, 90)
+        self._vfy_table.setColumnWidth(1, 120)
 
         self._vfy_result: dict[str, QComboBox] = {}
         self._vfy_notes:  dict[str, QLineEdit] = {}
@@ -1707,14 +1736,14 @@ class MainWindow(QMainWindow):
         self._update_msg.setObjectName("UpdateMsg")
         lay.addWidget(self._update_msg)
         lay.addStretch()
-        whats_new_btn = QPushButton("What's New?")
+        whats_new_btn = TertiaryButton("What's New?")
         whats_new_btn.clicked.connect(self._show_whats_new)
         lay.addWidget(whats_new_btn)
         install_btn = QPushButton("Install & Restart")
         install_btn.setObjectName("InstallBtn")
         install_btn.clicked.connect(self._install_update)
         lay.addWidget(install_btn)
-        dismiss_btn = QPushButton("\u2715")
+        dismiss_btn = TertiaryButton("\u2715")
         dismiss_btn.setFixedWidth(32)
         dismiss_btn.clicked.connect(lambda: banner.setVisible(False))
         lay.addWidget(dismiss_btn)
@@ -2254,11 +2283,8 @@ class MainWindow(QMainWindow):
         dlg.resize(760, 600)
         lay = QVBoxLayout(dlg)
 
-        tbl = QTableWidget(len(rows), len(headers), dlg)
+        tbl = _PhoenixTable(len(rows), len(headers), dlg)
         tbl.setHorizontalHeaderLabels(headers)
-        tbl.verticalHeader().setVisible(False)
-        tbl.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        tbl.setAlternatingRowColors(True)
         tbl.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
         tbl.horizontalHeader().setStretchLastSection(True)
 
@@ -2268,7 +2294,7 @@ class MainWindow(QMainWindow):
 
         lay.addWidget(tbl)
 
-        close_btn = QPushButton("Close")
+        close_btn = SecondaryButton("Close")
         close_btn.clicked.connect(dlg.accept)
         btn_row = QHBoxLayout()
         btn_row.addStretch()

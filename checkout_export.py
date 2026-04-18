@@ -13,9 +13,12 @@ from pathlib import Path
 
 from datetime import date as _date
 
+from copy import copy as _copy
+
 from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, Alignment
 from openpyxl.worksheet.worksheet import Worksheet
+from openpyxl.cell import MergedCell as _MergedCell
 
 from checkout_tool_backend import ValveCheckout
 
@@ -105,8 +108,33 @@ _NOTE_ROWS = [45, 46, 47, 48, 49]
 # ── Sheet filler ──────────────────────────────────────────────────────────────
 
 def _w(ws: Worksheet, row: int, col: int, value) -> None:
-    """Write value to cell without disturbing its existing formatting."""
-    ws.cell(row=row, column=col).value = value
+    """Write value to cell; skips non-top-left cells of merged ranges."""
+    cell = ws.cell(row=row, column=col)
+    if not isinstance(cell, _MergedCell):
+        cell.value = value
+
+
+def _copy_ws_into(src_ws: Worksheet, dst_wb) -> Worksheet:
+    """Copy a filled worksheet (values, styles, merges, dimensions) into dst_wb."""
+    dst_ws = dst_wb.create_sheet(src_ws.title)
+    for row in src_ws.iter_rows():
+        for cell in row:
+            if isinstance(cell, _MergedCell):
+                continue
+            dst = dst_ws.cell(cell.row, cell.column, cell.value)
+            if cell.has_style:
+                dst.font = _copy(cell.font)
+                dst.fill = _copy(cell.fill)
+                dst.border = _copy(cell.border)
+                dst.alignment = _copy(cell.alignment)
+                dst.number_format = cell.number_format
+    for rng in src_ws.merged_cells.ranges:
+        dst_ws.merge_cells(str(rng))
+    for col_letter, col_dim in src_ws.column_dimensions.items():
+        dst_ws.column_dimensions[col_letter].width = col_dim.width
+    for row_num, row_dim in src_ws.row_dimensions.items():
+        dst_ws.row_dimensions[row_num].height = row_dim.height
+    return dst_ws
 
 
 def _safe_tab_name(valve_tag: str) -> str:
@@ -470,31 +498,33 @@ def export_records(records: list[ValveCheckout], output_path: str,
     """
     Export one or more records to output_path (.xlsx).
     Produces one worksheet per record plus an optional Summary sheet.
-
-    summary_title: when non-empty and there are multiple records, a Summary
-                   sheet is prepended listing all checkouts.
+    Each record uses the template correct for its valve type, so mixed-type
+    batch exports are handled without MergedCell conflicts.
     """
     if not records:
         raise ValueError("No records provided for export.")
 
-    template_name = _VALVE_TYPE_TEMPLATE.get(records[0].valve_type, TEMPLATE_NAME)
-    template_path = _resource_path(template_name)
+    def _load_template(valve_type: str):
+        name = _VALVE_TYPE_TEMPLATE.get(valve_type, TEMPLATE_NAME)
+        path = _resource_path(name)
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"Template file '{name}' not found.\n"
+                "Please reinstall the application to restore bundled templates."
+            )
+        return load_workbook(path)
 
-    if not os.path.exists(template_path):
-        raise FileNotFoundError(
-            f"Template file '{template_name}' not found.\n"
-            "Please reinstall the application to restore bundled templates."
-        )
+    # Build the output workbook from the first record's template
+    wb = _load_template(records[0].valve_type)
+    first_ws = wb.active
+    _fill_one(first_ws, records[0])
 
-    wb = load_workbook(template_path)
-    template_ws = wb.active
-
-    sheets = [template_ws]
-    for _ in records[1:]:
-        sheets.append(wb.copy_worksheet(template_ws))
-
-    for ws, record in zip(sheets, records):
-        _fill_one(ws, record)
+    for record in records[1:]:
+        # Load a fresh copy of the correct template for this record
+        src_wb = _load_template(record.valve_type)
+        src_ws = src_wb.active
+        _fill_one(src_ws, record)
+        _copy_ws_into(src_ws, wb)
 
     if summary_title and len(records) > 1:
         _write_summary_sheet(wb, records, summary_title)
