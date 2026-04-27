@@ -726,3 +726,7 @@ QLabel#CheckoutTag {
     font-weight: 500;
     color: #ffffff;
 }
+
+QLabel#errorLabel { color: #ef4444; }
+QLabel#dialogTitle { font-size: 18pt; font-weight: 700; color: #ffffff; }
+QLabel#dialogSubtitle { font-size: 11pt; color: #9ca3af; }

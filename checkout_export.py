@@ -19,6 +19,7 @@ from openpyxl import load_workbook, Workbook
 from openpyxl.styles import Font, Alignment
 from openpyxl.worksheet.worksheet import Worksheet
 from openpyxl.cell import MergedCell as _MergedCell
+from openpyxl.worksheet.datavalidation import DataValidation
 
 from checkout_tool_backend import ValveCheckout
 
@@ -114,6 +115,12 @@ def _w(ws: Worksheet, row: int, col: int, value) -> None:
         cell.value = value
 
 
+def _add_pass_fail_validation(ws: Worksheet, cell_ref: str) -> None:
+    dv = DataValidation(type="list", formula1='"Pass,Fail"', allow_blank=True, showDropDown=False)
+    dv.sqref = cell_ref
+    ws.add_data_validation(dv)
+
+
 def _copy_ws_into(src_ws: Worksheet, dst_wb) -> Worksheet:
     """Copy a filled worksheet (values, styles, merges, dimensions) into dst_wb."""
     dst_ws = dst_wb.create_sheet(src_ws.title)
@@ -139,7 +146,7 @@ def _copy_ws_into(src_ws: Worksheet, dst_wb) -> Worksheet:
 
 def _safe_tab_name(valve_tag: str) -> str:
     name = (valve_tag or "Checkout")[:31]
-    for ch in r"\/?*[]":
+    for ch in r"\/?*[]:":
         name = name.replace(ch, "_")
     return name or "Checkout"
 
@@ -160,6 +167,7 @@ def fill_sheet(ws: Worksheet, record: ValveCheckout) -> None:
     _w(ws, 7,  3, record.emer_min)
     _w(ws, 7,  5, record.valve_min_sp)
     _w(ws, 7,  8, record.valve_max_sp)
+    _add_pass_fail_validation(ws, "A7")
 
     # Phoenix wiring — Install=col D(4), Wired=col E(5)
     w = record.wiring
@@ -229,6 +237,7 @@ def fill_sheet_gex_mav(ws: Worksheet, record: ValveCheckout) -> None:
     _w(ws, 7,  2, record.emer_min)
     _w(ws, 7,  3, record.valve_min_sp)
     _w(ws, 7,  5, record.valve_max_sp)
+    _add_pass_fail_validation(ws, "A7")
 
     # Phoenix wiring — Install=col D(4), Wired=col E(5)
     w = record.wiring
@@ -334,6 +343,7 @@ def fill_sheet_cscp_fh(ws: Worksheet, record: ValveCheckout) -> None:
     _w(ws, 7,  3, record.emer_min)
     _w(ws, 7,  5, record.valve_min_sp)
     _w(ws, 7,  8, record.valve_max_sp)
+    _add_pass_fail_validation(ws, "A7")
 
     # ACM wiring — single Wiring checkbox at col F (6)
     w = record.wiring
@@ -430,6 +440,7 @@ def fill_sheet_pbc_room(ws: Worksheet, record: ValveCheckout) -> None:
     _w(ws, 4,  9, record.description)
     _w(ws, 5,  3, record.model or "PBC (CSCP)")
     _w(ws, 7,  1, record.pass_fail)
+    _add_pass_fail_validation(ws, "A7")
 
     # PBC wiring — left panel: Install=col D(4), Wired=col E(5)
     w = record.wiring

@@ -28,6 +28,10 @@ A Windows desktop application for ATS Inc. field technicians to create, track, a
 - **Auto-update** — checks GitHub Releases on startup and installs updates in one click
 - **Dark / light mode** — toggled via View menu, preference saved between sessions
 - **Window geometry** — size and position are saved and restored between sessions
+- **Welcome dialog** — shown on first launch with a quick-start guide; dismissible permanently via "Don't show this again"
+- **Help menu** — Version History (fetched live from GitHub), Email Support, and Submit Bug / Suggestion (opens a pre-filled email to the developer)
+- **Model auto-fill** — the Model field pre-populates with the correct default when the valve type is changed (e.g. switching to CSCP Fume Hood fills "ACM (CSCP)")
+- **Excel Pass/Fail validation** — exported sheets include a dropdown constraint on the Pass/Fail cell so it only accepts "Pass" or "Fail"
 
 ---
 

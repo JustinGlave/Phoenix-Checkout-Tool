@@ -11,8 +11,8 @@ import sys
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QDate, Qt, QSettings, QThread, QTimer, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QFont, QIcon, QIntValidator, QPainter, QPalette, QPixmap
+from PySide6.QtCore import QDate, Qt, QSettings, QThread, QTimer, QUrl, Signal
+from PySide6.QtGui import QAction, QBrush, QColor, QDesktopServices, QFont, QIcon, QIntValidator, QPainter, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateEdit, QDialog,
     QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
@@ -809,6 +809,111 @@ class BatchCheckoutDialog(QDialog):
         ]
 
 
+# ── Welcome / Bug dialogs ─────────────────────────────────────────────────────
+
+class WelcomeDialog(QDialog):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Welcome")
+        self.setModal(True)
+        self.setFixedWidth(440)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(28, 28, 28, 22)
+
+        title = QLabel("Phoenix Valve Checkout Tool")
+        title.setObjectName("dialogTitle")
+        title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(title)
+
+        subtitle = QLabel("Built for the ATS Phoenix team")
+        subtitle.setObjectName("dialogSubtitle")
+        subtitle.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(subtitle)
+
+        layout.addSpacing(10)
+
+        body = QLabel(
+            "A tool to manage Phoenix valve checkouts at ATS —\n"
+            "track wiring, configuration, and verification\n"
+            "from installation to closeout.\n\n"
+            "Made by Justin Glave\n\n"
+            "Questions or suggestions?\n"
+            "Email: justing@atsinc.org"
+        )
+        body.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        body.setWordWrap(True)
+        layout.addWidget(body)
+
+        layout.addSpacing(12)
+
+        self._dont_show = QCheckBox("Don't show this again")
+        layout.addWidget(self._dont_show, alignment=Qt.AlignmentFlag.AlignCenter)
+
+        layout.addSpacing(6)
+
+        btn = PrimaryButton("Get Started")
+        btn.setFixedWidth(130)
+        btn.clicked.connect(self.accept)
+        layout.addWidget(btn, alignment=Qt.AlignmentFlag.AlignCenter)
+
+    def dont_show_again(self) -> bool:
+        return self._dont_show.isChecked()
+
+
+class BugSuggestionDialog(QDialog):
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Submit Bug or Suggestion")
+        self.setModal(True)
+        self.resize(480, 340)
+
+        layout = QVBoxLayout(self)
+        layout.setSpacing(10)
+        layout.setContentsMargins(20, 20, 20, 16)
+
+        title = QLabel("Submit a Bug or Suggestion")
+        title.setObjectName("SectionTitle")
+        layout.addWidget(title)
+
+        form = QFormLayout()
+        form.setSpacing(8)
+        self._subject = QLineEdit()
+        self._subject.setPlaceholderText("Brief summary")
+        form.addRow("Subject:", self._subject)
+        layout.addLayout(form)
+
+        layout.addWidget(QLabel("Message:"))
+        self._body = QPlainTextEdit()
+        self._body.setPlaceholderText("Describe the issue or suggestion in detail...")
+        self._body.setMinimumHeight(150)
+        layout.addWidget(self._body, 1)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        send_btn = PrimaryButton("Send")
+        send_btn.setFixedWidth(90)
+        send_btn.clicked.connect(self._send)
+        cancel_btn = TertiaryButton("Cancel")
+        cancel_btn.setFixedWidth(90)
+        cancel_btn.clicked.connect(self.reject)
+        btn_row.addWidget(send_btn)
+        btn_row.addWidget(cancel_btn)
+        layout.addLayout(btn_row)
+
+    def _send(self) -> None:
+        import urllib.parse
+        subject = self._subject.text().strip() or "Checkout Tool Bug/Suggestion"
+        body = self._body.toPlainText().strip()
+        if not body:
+            QMessageBox.warning(self, "Empty message", "Please enter a message before sending.")
+            return
+        params = urllib.parse.urlencode({"subject": f"Checkout Tool: {subject}", "body": body})
+        QDesktopServices.openUrl(QUrl(f"mailto:justing@atsinc.org?{params}"))
+        self.accept()
+
+
 # ── Main window ───────────────────────────────────────────────────────────────
 
 class MainWindow(QMainWindow):
@@ -829,6 +934,8 @@ class MainWindow(QMainWindow):
         self._save_timer.timeout.connect(self._save_current)
 
         self._update_info: Optional[updater.UpdateInfo] = None
+        self._last_inserted_snippet: str = ""   # tracks last snippet appended to notes
+        self._snippets: list[tuple[str, str]] = self._load_snippets()
 
         self.setWindowTitle(f"{self.APP_NAME} \u2014 v{__version__}")
         self.resize(1380, 840)
@@ -900,6 +1007,23 @@ class MainWindow(QMainWindow):
             pl_menu.addAction(act)
 
         help_menu = mb.addMenu("Help")
+
+        version_history_act = QAction("Version History && Recent Updates", self)
+        version_history_act.triggered.connect(self._show_version_history)
+        help_menu.addAction(version_history_act)
+
+        help_menu.addSeparator()
+
+        email_act = QAction("Email Support", self)
+        email_act.triggered.connect(self._email_support)
+        help_menu.addAction(email_act)
+
+        bug_act = QAction("Submit Bug / Suggestion...", self)
+        bug_act.triggered.connect(self._submit_bug_suggestion)
+        help_menu.addAction(bug_act)
+
+        help_menu.addSeparator()
+
         about_act = QAction(f"About {self.APP_NAME}", self)
         about_act.triggered.connect(self._show_about)
         help_menu.addAction(about_act)
@@ -1712,18 +1836,137 @@ class MainWindow(QMainWindow):
         lay = QVBoxLayout(panel)
         lay.setContentsMargins(16, 16, 16, 16)
         lay.setSpacing(8)
+
         lbl = QLabel("Notes")
         lbl.setObjectName("SectionTitle")
         lay.addWidget(lbl)
+
+        # ── Snippet row ────────────────────────────────────────────────────────
+        snippet_row = QHBoxLayout()
+        snippet_row.setSpacing(6)
+
         self._notes_template_combo = QComboBox()
-        for label, _ in _NOTES_TEMPLATES:
-            self._notes_template_combo.addItem(label)
+        self._refresh_snippet_combo()
         self._notes_template_combo.currentIndexChanged.connect(self._on_notes_template_selected)
-        lay.addWidget(self._notes_template_combo)
+        snippet_row.addWidget(self._notes_template_combo, stretch=1)
+
+        add_snippet_btn = SecondaryButton("+ Add Snippet")
+        add_snippet_btn.clicked.connect(self._on_add_snippet)
+        snippet_row.addWidget(add_snippet_btn)
+
+        self._del_snippet_btn = TertiaryButton("Delete Snippet")
+        self._del_snippet_btn.clicked.connect(self._on_delete_snippet)
+        snippet_row.addWidget(self._del_snippet_btn)
+
+        lay.addLayout(snippet_row)
+
+        # ── Remove-from-notes row ──────────────────────────────────────────────
+        remove_row = QHBoxLayout()
+        remove_row.setSpacing(6)
+        remove_row.addStretch()
+        self._remove_snippet_btn = TertiaryButton("\u21a9 Remove Last Snippet from Notes")
+        self._remove_snippet_btn.setEnabled(False)
+        self._remove_snippet_btn.clicked.connect(self._on_remove_snippet_from_notes)
+        remove_row.addWidget(self._remove_snippet_btn)
+        lay.addLayout(remove_row)
+
         self._notes_edit = QPlainTextEdit()
         self._notes_edit.textChanged.connect(self._on_any_change)
-        lay.addWidget(self._notes_edit)
+        lay.addWidget(self._notes_edit, stretch=1)
+
+        self._update_del_snippet_btn()
         return panel
+
+    # ── Snippet persistence & management ──────────────────────────────────────
+
+    @staticmethod
+    def _load_snippets() -> list[tuple[str, str]]:
+        import json
+        s = QSettings("ATS Inc", "Phoenix Valve Checkout Tool")
+        raw = s.value("snippets", None)
+        if raw:
+            try:
+                return [(n, t) for n, t in json.loads(str(raw))]
+            except (json.JSONDecodeError, ValueError, TypeError):
+                pass
+        return list(_NOTES_TEMPLATES[1:])   # default: built-ins minus placeholder
+
+    def _save_snippets(self) -> None:
+        import json
+        s = QSettings("ATS Inc", "Phoenix Valve Checkout Tool")
+        s.setValue("snippets", json.dumps(self._snippets))
+
+    def _refresh_snippet_combo(self) -> None:
+        self._notes_template_combo.blockSignals(True)
+        self._notes_template_combo.clear()
+        self._notes_template_combo.addItem("— Insert snippet —")
+        for name, _ in self._snippets:
+            self._notes_template_combo.addItem(name)
+        self._notes_template_combo.setCurrentIndex(0)
+        self._notes_template_combo.blockSignals(False)
+
+    def _update_del_snippet_btn(self) -> None:
+        """Enable Delete Snippet only when a real snippet is selected."""
+        enabled = self._notes_template_combo.currentIndex() > 0
+        self._del_snippet_btn.setEnabled(enabled)
+
+    def _on_add_snippet(self) -> None:
+        dlg = QDialog(self)
+        dlg.setWindowTitle("Add Snippet")
+        dlg.resize(420, 220)
+        lay = QVBoxLayout(dlg)
+        lay.setSpacing(8)
+
+        lay.addWidget(QLabel("Snippet name:"))
+        name_edit = QLineEdit()
+        name_edit.setPlaceholderText("e.g. LON comms confirmed")
+        lay.addWidget(name_edit)
+
+        lay.addWidget(QLabel("Snippet text:"))
+        text_edit = QPlainTextEdit()
+        text_edit.setPlaceholderText("Text that will be inserted into the notes box…")
+        lay.addWidget(text_edit, stretch=1)
+
+        btn_row = QHBoxLayout()
+        save_btn = PrimaryButton("Save")
+        cancel_btn = TertiaryButton("Cancel")
+        btn_row.addStretch()
+        btn_row.addWidget(cancel_btn)
+        btn_row.addWidget(save_btn)
+        lay.addLayout(btn_row)
+
+        cancel_btn.clicked.connect(dlg.reject)
+        save_btn.clicked.connect(dlg.accept)
+
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        name = name_edit.text().strip()
+        text = text_edit.toPlainText().strip()
+        if not name or not text:
+            QMessageBox.warning(self, "Add Snippet", "Both name and text are required.")
+            return
+
+        self._snippets.append((name, text))
+        self._save_snippets()
+        self._refresh_snippet_combo()
+
+    def _on_delete_snippet(self) -> None:
+        idx = self._notes_template_combo.currentIndex()
+        if idx <= 0:
+            return
+        snippet_idx = idx - 1
+        name = self._snippets[snippet_idx][0]
+        reply = QMessageBox.question(
+            self, "Delete Snippet",
+            f'Delete snippet "{name}"?',
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self._snippets.pop(snippet_idx)
+        self._save_snippets()
+        self._refresh_snippet_combo()
+        self._update_del_snippet_btn()
 
     # ── Update banner ─────────────────────────────────────────────────────────
 
@@ -2338,7 +2581,8 @@ class MainWindow(QMainWindow):
         records = dlg.get_records()
         for record in records:
             self._store.add(record)
-        self._refresh_tree(select_id=records[0].id)
+        if records:
+            self._refresh_tree(select_id=records[0].id)
 
     def _open_new_checkout_for_job(self, job: Job) -> None:
         dlg = NewCheckoutDialog(job, self)
@@ -2603,6 +2847,18 @@ class MainWindow(QMainWindow):
     _TAB_WIRING  = 1
     _TAB_CFG_VFY = 2
 
+    _MODEL_DEFAULTS: dict[str, str] = {
+        "Fume Hood":       "CELERIS 2",
+        "GEX":             "CELERIS 2",
+        "MAV":             "CELERIS 2",
+        "Snorkel":         "CELERIS 2",
+        "Canopy":          "CELERIS 2",
+        "Draw Down Bench": "CELERIS 2",
+        "Gas Cabinet":     "CELERIS 2",
+        "CSCP Fume Hood":  "ACM (CSCP)",
+        "PBC Room":        "PBC (CSCP)",
+    }
+
     def _update_fume_hood_widgets(self, valve_type: str) -> None:
         """Show/hide widgets based on valve type."""
         fume_hood = valve_type in ("Fume Hood", "CSCP Fume Hood")
@@ -2667,6 +2923,12 @@ class MainWindow(QMainWindow):
                 visible_vfy += 1
         hdr_h = self._vfy_table.horizontalHeader().height()
         self._vfy_table.setFixedHeight(hdr_h + visible_vfy * self._vfy_row_height + 4)
+
+        # ── Model field — auto-fill default when switching types ──────────────
+        new_default = self._MODEL_DEFAULTS.get(valve_type, "")
+        current = self._f_model.text()
+        if not current or current in self._MODEL_DEFAULTS.values():
+            self._f_model.setText(new_default)
 
     def _wiring_boards(self) -> list[tuple[dict, str]]:
         return [
@@ -2755,16 +3017,34 @@ class MainWindow(QMainWindow):
         self._loading = False
 
     def _on_notes_template_selected(self, idx: int) -> None:
+        self._update_del_snippet_btn()
         if idx == 0:
             return
-        _, snippet = _NOTES_TEMPLATES[idx]
-        if snippet:
+        snippet_idx = idx - 1
+        if snippet_idx >= len(self._snippets):
+            return
+        _, text = self._snippets[snippet_idx]
+        if text:
             current = self._notes_edit.toPlainText()
             sep = "\n" if current and not current.endswith("\n") else ""
-            self._notes_edit.setPlainText(current + sep + snippet)
+            inserted = sep + text
+            self._notes_edit.setPlainText(current + inserted)
+            self._last_inserted_snippet = inserted
+            self._remove_snippet_btn.setEnabled(True)
         self._notes_template_combo.blockSignals(True)
-        self._notes_template_combo.setCurrentIndex(0)
+        self._notes_template_combo.setCurrentIndex(idx)   # keep selection visible
         self._notes_template_combo.blockSignals(False)
+
+    def _on_remove_snippet_from_notes(self) -> None:
+        if not self._last_inserted_snippet:
+            return
+        current = self._notes_edit.toPlainText()
+        if current.endswith(self._last_inserted_snippet):
+            self._notes_edit.setPlainText(
+                current[: len(current) - len(self._last_inserted_snippet)]
+            )
+        self._last_inserted_snippet = ""
+        self._remove_snippet_btn.setEnabled(False)
 
     def _backup_data(self) -> None:
         from datetime import date as _date
@@ -2788,6 +3068,85 @@ class MainWindow(QMainWindow):
             self, f"About {self.APP_NAME}",
             f"{self.APP_NAME}\nVersion {__version__}\n\nBuilt for ATS Inc.",
         )
+
+    def _show_version_history(self) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Version History & Recent Updates")
+        dialog.setModal(True)
+        dialog.resize(560, 480)
+
+        layout = QVBoxLayout(dialog)
+        layout.setSpacing(12)
+
+        header = QLabel("Fetching release history from GitHub…")
+        header.setObjectName("SectionTitle")
+        layout.addWidget(header)
+
+        text_area = QPlainTextEdit()
+        text_area.setReadOnly(True)
+        layout.addWidget(text_area, 1)
+
+        close_btn = TertiaryButton("Close")
+        close_btn.setFixedWidth(100)
+        close_btn.clicked.connect(dialog.accept)
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        btn_row.addWidget(close_btn)
+        layout.addLayout(btn_row)
+
+        dialog.show()
+        QApplication.processEvents()
+
+        from updater import GITHUB_OWNER, GITHUB_REPO
+        try:
+            import urllib.request, json as _json
+            url = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases?per_page=100"
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "Accept": "application/vnd.github+json",
+                    "User-Agent": "PhoenixCheckoutTool",
+                    "Cache-Control": "no-cache",
+                    "Pragma": "no-cache",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                releases = _json.loads(resp.read().decode())
+
+            if not releases:
+                text_area.setPlainText("No releases found on GitHub.")
+                header.setText("Version History")
+            else:
+                lines = []
+                for rel in releases:
+                    name  = rel.get("name") or rel.get("tag_name", "")
+                    date  = rel.get("published_at", "")[:10]
+                    raw   = rel.get("body", "").strip() or "No release notes."
+                    notes = re.sub(r"#{1,6}\s*", "", raw)
+                    notes = re.sub(r"\*{1,2}(.+?)\*{1,2}", r"\1", notes)
+                    lines.append(f"{name}  ({date})")
+                    lines.append("─" * 48)
+                    lines.append(notes)
+                    lines.append("")
+                text_area.setPlainText("\n".join(lines))
+                count = len(releases)
+                header.setText(f"Version History  ({count} release{'s' if count != 1 else ''})")
+
+        except Exception as exc:
+            text_area.setPlainText(
+                f"Could not fetch release history.\n\nError: {exc}\n\n"
+                "You can view the full history at:\n"
+                f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/releases"
+            )
+            header.setText("Version History")
+
+        dialog.exec()
+
+    def _email_support(self) -> None:
+        QDesktopServices.openUrl(QUrl("mailto:justing@atsinc.org"))
+
+    def _submit_bug_suggestion(self) -> None:
+        BugSuggestionDialog(self).exec()
 
     # ── Dark / light mode ─────────────────────────────────────────────────────
 
@@ -3080,6 +3439,13 @@ def main() -> None:
 
     window = MainWindow()
     window.show()
+
+    settings = QSettings("ATS Inc", "Phoenix Valve Checkout Tool")
+    if settings.value("showWelcome", True, type=bool):
+        dlg = WelcomeDialog(window)
+        dlg.exec()
+        if dlg.dont_show_again():
+            settings.setValue("showWelcome", False)
 
     sys.exit(app.exec())
 

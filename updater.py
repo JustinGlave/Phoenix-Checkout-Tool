@@ -125,6 +125,7 @@ def download_and_apply(info: UpdateInfo, progress_callback=None) -> None:
     current_exe = Path(sys.executable).resolve()
 
     tmp_fd, tmp_zip_str = tempfile.mkstemp(suffix=".zip")
+    os.close(tmp_fd)
     tmp_zip = Path(tmp_zip_str)
 
     try:
@@ -136,7 +137,7 @@ def download_and_apply(info: UpdateInfo, progress_callback=None) -> None:
             total = int(resp.headers.get("Content-Length", 0))
             done  = 0
             chunk = 64 * 1024
-            with open(tmp_fd, "wb") as fh:
+            with open(tmp_zip_str, "wb") as fh:
                 while True:
                     block = resp.read(chunk)
                     if not block:
@@ -158,6 +159,7 @@ def download_and_apply(info: UpdateInfo, progress_callback=None) -> None:
 
     pid = os.getpid()
     bat_fd, bat_path_str = tempfile.mkstemp(suffix=".bat")
+    os.close(bat_fd)
     bat_path = Path(bat_path_str)
     exe_str = str(current_exe)
     zip_str = str(tmp_zip)
@@ -173,7 +175,7 @@ del "{zip_str}"
 start "" "{exe_str}"
 del "%~f0"
 """
-    with open(bat_fd, "w") as fh:
+    with open(bat_path_str, "w") as fh:
         fh.write(bat_content)
 
     subprocess.Popen(
