@@ -8,10 +8,9 @@ How it works
    against the local __version__ string.
 3. If a newer version exists it returns an UpdateInfo object; the GUI shows
    a banner with an "Install & Restart" button.
-4. When the user clicks the button, download_and_apply() is called:
-      a. Downloads the new .zip to a temp file.
-      b. Extracts the exe over the current install via a batch script.
-      c. Launches the batch and calls sys.exit() — Windows takes it from there.
+4. When the user clicks the button, the GUI calls download_update() in a
+   background thread (with a progress callback), then apply_update() on the
+   main thread once the download is complete.
 
 Configuration
 -------------
@@ -109,25 +108,15 @@ def check_for_update() -> Optional[UpdateInfo]:
         return None
 
 
-def download_and_apply(info: UpdateInfo, progress_callback=None) -> None:
+def download_update(info: UpdateInfo, tmp_zip: Path,
+                    progress_callback=None) -> None:
     """
-    Download the new zip, extract the exe over the current install, and restart.
+    Download the new zip into tmp_zip.
 
     progress_callback(bytes_done, total_bytes) is called during download.
     Raises RuntimeError on failure so the caller can show an error dialog.
+    Safe to call from a background thread.
     """
-    if not getattr(sys, "frozen", False):
-        raise RuntimeError(
-            "Update can only be applied to a compiled build.\n"
-            "You're running from source — pull the latest code from GitHub instead."
-        )
-
-    current_exe = Path(sys.executable).resolve()
-
-    tmp_fd, tmp_zip_str = tempfile.mkstemp(suffix=".zip")
-    os.close(tmp_fd)
-    tmp_zip = Path(tmp_zip_str)
-
     try:
         req = urllib.request.Request(
             info.download_url,
@@ -137,7 +126,7 @@ def download_and_apply(info: UpdateInfo, progress_callback=None) -> None:
             total = int(resp.headers.get("Content-Length", 0))
             done  = 0
             chunk = 64 * 1024
-            with open(tmp_zip_str, "wb") as fh:
+            with open(tmp_zip, "wb") as fh:
                 while True:
                     block = resp.read(chunk)
                     if not block:
@@ -157,12 +146,33 @@ def download_and_apply(info: UpdateInfo, progress_callback=None) -> None:
         tmp_zip.unlink(missing_ok=True)
         raise RuntimeError(f"Download failed: {exc}") from exc
 
+
+def apply_update(info: UpdateInfo, tmp_zip: Path) -> None:
+    """
+    Extract the downloaded zip over the current exe via a batch script, then exit.
+
+    Must be called from the compiled exe (sys.frozen). Never returns normally —
+    it launches the batch and calls sys.exit(0).
+    Raises RuntimeError if the environment is wrong.
+    """
+    if not getattr(sys, "frozen", False):
+        raise RuntimeError(
+            "Update can only be applied to a compiled build.\n"
+            "You're running from source — pull the latest code from GitHub instead."
+        )
+
+    current_exe = Path(sys.executable).resolve()
+    exe_str = str(current_exe)
+    zip_str = str(tmp_zip)
+
+    # Escape single quotes for embedding in PowerShell single-quoted string literals.
+    exe_ps = exe_str.replace("'", "''")
+    zip_ps = zip_str.replace("'", "''")
+
     pid = os.getpid()
     bat_fd, bat_path_str = tempfile.mkstemp(suffix=".bat")
     os.close(bat_fd)
-    bat_path = Path(bat_path_str)
-    exe_str = str(current_exe)
-    zip_str = str(tmp_zip)
+
     bat_content = f"""@echo off
 :wait
 tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul
@@ -170,7 +180,7 @@ if not errorlevel 1 (
     timeout /t 1 /nobreak >nul
     goto wait
 )
-powershell -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; $tmp = Join-Path $env:TEMP ([System.IO.Path]::GetRandomFileName()); [System.IO.Compression.ZipFile]::ExtractToDirectory('{zip_str}', $tmp); Copy-Item -Path (Join-Path $tmp '{EXE_NAME}') -Destination '{exe_str}' -Force; Remove-Item -Path $tmp -Recurse -Force"
+powershell -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; $tmp = Join-Path $env:TEMP ([System.IO.Path]::GetRandomFileName()); [System.IO.Compression.ZipFile]::ExtractToDirectory('{zip_ps}', $tmp); Copy-Item -Path (Join-Path $tmp '{EXE_NAME}') -Destination '{exe_ps}' -Force; Remove-Item -Path $tmp -Recurse -Force"
 del "{zip_str}"
 start "" "{exe_str}"
 del "%~f0"
@@ -179,8 +189,34 @@ del "%~f0"
         fh.write(bat_content)
 
     subprocess.Popen(
-        ["cmd.exe", "/c", str(bat_path)],
+        ["cmd.exe", "/c", bat_path_str],
         creationflags=subprocess.CREATE_NO_WINDOW,
         close_fds=True,
     )
     sys.exit(0)
+
+
+def download_and_apply(info: UpdateInfo, progress_callback=None) -> None:
+    """
+    Download the new zip, extract the exe over the current install, and restart.
+
+    Convenience wrapper around download_update() + apply_update().
+    Raises RuntimeError on failure so the caller can show an error dialog.
+    """
+    if not getattr(sys, "frozen", False):
+        raise RuntimeError(
+            "Update can only be applied to a compiled build.\n"
+            "You're running from source — pull the latest code from GitHub instead."
+        )
+
+    tmp_fd, tmp_zip_str = tempfile.mkstemp(suffix=".zip")
+    os.close(tmp_fd)
+    tmp_zip = Path(tmp_zip_str)
+
+    try:
+        download_update(info, tmp_zip, progress_callback)
+    except Exception:
+        tmp_zip.unlink(missing_ok=True)
+        raise
+
+    apply_update(info, tmp_zip)

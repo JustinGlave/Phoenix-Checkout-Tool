@@ -122,7 +122,8 @@ def _add_pass_fail_validation(ws: Worksheet, cell_ref: str) -> None:
 
 
 def _copy_ws_into(src_ws: Worksheet, dst_wb) -> Worksheet:
-    """Copy a filled worksheet (values, styles, merges, dimensions) into dst_wb."""
+    """Copy a filled worksheet (values, styles, merges, dimensions, print settings,
+    data validation) into dst_wb."""
     dst_ws = dst_wb.create_sheet(src_ws.title)
     for row in src_ws.iter_rows():
         for cell in row:
@@ -141,6 +142,15 @@ def _copy_ws_into(src_ws: Worksheet, dst_wb) -> Worksheet:
         dst_ws.column_dimensions[col_letter].width = col_dim.width
     for row_num, row_dim in src_ws.row_dimensions.items():
         dst_ws.row_dimensions[row_num].height = row_dim.height
+    # Data validation rules (e.g. Pass/Fail dropdowns in A7)
+    for dv in src_ws.data_validations.dataValidation:
+        dst_ws.add_data_validation(_copy(dv))
+    # Print / page settings
+    dst_ws.page_setup = _copy(src_ws.page_setup)
+    dst_ws.page_margins = _copy(src_ws.page_margins)
+    if src_ws.freeze_panes:
+        dst_ws.freeze_panes = src_ws.freeze_panes
+    dst_ws.print_title_rows = src_ws.print_title_rows
     return dst_ws
 
 
@@ -326,7 +336,7 @@ def fill_sheet_cscp_fh(ws: Worksheet, record: ValveCheckout) -> None:
     DHV Black Box wiring uses a single Wiring checkbox at col L (12).
     Config:  CFM = col E (5),  Notes = col I (9),  rows 46-51.
     Verify:  Result = col E (5),  Notes = col I (9),  rows 53-58.
-    Sash sensor mounting check written to row 42, col G (7) on DHV side.
+    Sash sensor mounting check written to row 41, col G (7) on DHV side.
     Notes: rows 60-64, col A (1).
     """
 

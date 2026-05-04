@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateEdit, QDialog,
     QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
-    QPlainTextEdit, QProgressBar, QPushButton, QScrollArea, QSpinBox, QSplitter,
+    QPlainTextEdit, QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSpinBox, QSplitter,
     QStackedWidget, QTabWidget, QTableWidget, QTableWidgetItem, QTreeWidget,
     QTreeWidgetItem, QVBoxLayout, QWidget,
 )
@@ -238,7 +238,7 @@ PBC_WIRING_RIGHT: list[tuple] = [
     ("UIO",                    62, "C",                 "Common",                          False),
     ("UIO",                    63, "IO8",               "Universal Input/Output 8",        False),
     ("UIO",                    64, "C",                 "Common",                          False),
-    ("UIO",                    65, "23 VDC OUT",        "Auxiliary Power Output",          False),
+    ("UIO",                    65, "24 VDC OUT",        "Auxiliary Power Output",          False),
     ("UIO",                    66, "IO9",               "Universal Input/Output 9",        False),
     ("UIO",                    67, "C",                 "Common",                          False),
     ("UIO",                    68, "IO10",              "Universal Input/Output 10",       False),
@@ -590,6 +590,60 @@ class _UpdateChecker(QThread):
             self.found.emit(info)
 
 
+class _ReleasesFetcher(QThread):
+    done  = Signal(list)
+    error = Signal(str)
+
+    def run(self) -> None:
+        from updater import GITHUB_OWNER, GITHUB_REPO
+        try:
+            import urllib.request
+            import json as _json
+            url = (
+                f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}"
+                "/releases?per_page=100"
+            )
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "Accept":         "application/vnd.github+json",
+                    "User-Agent":     "PhoenixCheckoutTool",
+                    "Cache-Control":  "no-cache",
+                    "Pragma":         "no-cache",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                self.done.emit(_json.loads(resp.read().decode()))
+        except Exception as exc:
+            self.error.emit(str(exc))
+
+
+class _UpdateDownloader(QThread):
+    progress = Signal(int, int)   # bytes_done, total_bytes
+    ready    = Signal(str)        # tmp_zip path when download is complete
+    failed   = Signal(str)        # error message
+
+    def __init__(self, info: updater.UpdateInfo, parent=None) -> None:
+        super().__init__(parent)
+        self._info = info
+
+    def run(self) -> None:
+        import tempfile
+        import os as _os
+        tmp_fd, tmp_zip = tempfile.mkstemp(suffix=".zip")
+        _os.close(tmp_fd)
+        try:
+            updater.download_update(
+                self._info,
+                Path(tmp_zip),
+                progress_callback=lambda d, t: self.progress.emit(d, t),
+            )
+            self.ready.emit(tmp_zip)
+        except Exception as exc:
+            Path(tmp_zip).unlink(missing_ok=True)
+            self.failed.emit(str(exc))
+
+
 # ── Dialogs ───────────────────────────────────────────────────────────────────
 
 class NewJobDialog(QDialog):
@@ -705,6 +759,12 @@ class BatchCheckoutDialog(QDialog):
         self._date = QDateEdit(QDate.currentDate())
         self._date.setCalendarPopup(True)
         self._date.setDisplayFormat("yyyy-MM-dd")
+        self._valve_type = QComboBox()
+        self._valve_type.addItems([
+            "Fume Hood", "GEX", "MAV", "Snorkel",
+            "Canopy", "Draw Down Bench", "Gas Cabinet",
+            "CSCP Fume Hood", "PBC Room",
+        ])
 
         self._preview = QLabel("")
         self._preview.setObjectName("TagPreview")
@@ -713,6 +773,7 @@ class BatchCheckoutDialog(QDialog):
         form = QFormLayout()
         form.addRow("Starting Tag *", self._valve_tag)
         form.addRow("Count *",        self._count)
+        form.addRow("Valve Type",     self._valve_type)
         form.addRow("Technician",     self._technician)
         form.addRow("Description",    self._description)
         form.addRow("Date",           self._date)
@@ -791,10 +852,11 @@ class BatchCheckoutDialog(QDialog):
         super().accept()
 
     def get_records(self) -> list[ValveCheckout]:
-        tags = self._tags() or []
+        tags  = self._tags() or []
         tech  = self._technician.text().strip()
         desc  = self._description.text().strip()
         date  = self._date.date().toString("yyyy-MM-dd")
+        vtype = self._valve_type.currentText()
         return [
             ValveCheckout(
                 job_id=self._job.id,
@@ -804,6 +866,7 @@ class BatchCheckoutDialog(QDialog):
                 technician=tech,
                 description=desc,
                 date=date,
+                valve_type=vtype,
             )
             for tag in tags
         ]
@@ -936,6 +999,7 @@ class MainWindow(QMainWindow):
         self._update_info: Optional[updater.UpdateInfo] = None
         self._last_inserted_snippet: str = ""   # tracks last snippet appended to notes
         self._snippets: list[tuple[str, str]] = self._load_snippets()
+        self._model_user_modified = False       # True once user manually edits the Model field
 
         self.setWindowTitle(f"{self.APP_NAME} \u2014 v{__version__}")
         self.resize(1380, 840)
@@ -1334,8 +1398,9 @@ class MainWindow(QMainWindow):
         # Clear old rows (keep the trailing stretch)
         while self._arch_list_layout.count() > 1:
             item = self._arch_list_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            w = item.widget() if item else None
+            if w:
+                w.deleteLater()
 
         if not records:
             empty_lbl = QLabel("No checkout sheets in this job.")
@@ -1427,8 +1492,9 @@ class MainWindow(QMainWindow):
         # Clear previous rows (keep the trailing stretch)
         while self._job_list_layout.count() > 1:
             item = self._job_list_layout.takeAt(0)
-            if item.widget():
-                item.widget().deleteLater()
+            w = item.widget() if item else None
+            if w:
+                w.deleteLater()
 
         if not records:
             empty_lbl = QLabel("No checkout sheets in this job yet.")
@@ -1508,6 +1574,7 @@ class MainWindow(QMainWindow):
         self._f_description  = le()
         self._f_model        = QLineEdit("CELERIS 2")
         self._f_model.textChanged.connect(self._on_any_change)
+        self._f_model.textEdited.connect(self._on_model_user_edit)
 
         self._f_valve_type = QComboBox()
         self._f_valve_type.addItems([
@@ -1872,7 +1939,12 @@ class MainWindow(QMainWindow):
 
         self._notes_edit = QPlainTextEdit()
         self._notes_edit.textChanged.connect(self._on_any_change)
+        self._notes_edit.textChanged.connect(self._update_notes_counter)
         lay.addWidget(self._notes_edit, stretch=1)
+
+        self._notes_line_lbl = QLabel(f"0 / {NOTES_MAX_LINES} lines (export limit)")
+        self._notes_line_lbl.setObjectName("hint")
+        lay.addWidget(self._notes_line_lbl, alignment=Qt.AlignmentFlag.AlignRight)
 
         self._update_del_snippet_btn()
         return panel
@@ -2052,6 +2124,8 @@ class MainWindow(QMainWindow):
     def _select_by_id(self, target_id: str) -> None:
         for i in range(self._tree.topLevelItemCount()):
             item = self._tree.topLevelItem(i)
+            if item is None:
+                continue
             role = item.data(0, self._ROLE)
             if role is None:
                 continue
@@ -2062,6 +2136,8 @@ class MainWindow(QMainWindow):
             if kind == "job":
                 for j in range(item.childCount()):
                     child = item.child(j)
+                    if child is None:
+                        continue
                     _, cid = child.data(0, self._ROLE)
                     if cid == target_id:
                         self._tree.setCurrentItem(child)
@@ -2071,16 +2147,28 @@ class MainWindow(QMainWindow):
         q = text.strip().lower()
         for i in range(self._tree.topLevelItemCount()):
             job_item = self._tree.topLevelItem(i)
+            if job_item is None:
+                continue
             role = job_item.data(0, self._ROLE)
             if role is None:
                 continue
-            kind, _ = role
-            if kind in ("separator", "archived_job"):
+            kind, id_ = role
+            if kind == "separator":
                 job_item.setHidden(bool(q))
+                continue
+            if kind == "archived_job":
+                if q:
+                    arch_job = self._store.get_job(id_)
+                    label = _job_label(arch_job).lower() if arch_job else ""
+                    job_item.setHidden(q not in label)
+                else:
+                    job_item.setHidden(False)
                 continue
             any_visible = False
             for j in range(job_item.childCount()):
                 child = job_item.child(j)
+                if child is None:
+                    continue
                 if q:
                     _, cid = child.data(0, self._ROLE)
                     rec = self._store.get(cid)
@@ -2231,7 +2319,7 @@ class MainWindow(QMainWindow):
     # ── Actions ───────────────────────────────────────────────────────────────
 
     def _create_test_data(self) -> None:
-        """Create a test job with 5 varied valve checkouts for export testing."""
+        """Create a test job with 7 varied valve checkouts for export testing."""
         if QMessageBox.question(
             self, "Create Test Data",
             "This will create a test job (TEST-001) with 7 sample checkout sheets.\n\nProceed?",
@@ -2579,6 +2667,19 @@ class MainWindow(QMainWindow):
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         records = dlg.get_records()
+        existing_tags = {r.valve_tag.lower() for r in self._store.records_for_job(job_id)}
+        dupes = [r.valve_tag for r in records if r.valve_tag.lower() in existing_tags]
+        if dupes:
+            msg = (
+                "The following tags already exist in this job:\n\n"
+                + "\n".join(f"  • {t}" for t in dupes)
+                + "\n\nProceed anyway?"
+            )
+            if QMessageBox.question(
+                self, "Duplicate Tags", msg,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            ) != QMessageBox.StandardButton.Yes:
+                return
         for record in records:
             self._store.add(record)
         if records:
@@ -2698,7 +2799,10 @@ class MainWindow(QMainWindow):
             ) != QMessageBox.StandardButton.Yes:
                 return
         job = self._store.get_job(job_id)
-        default_name = f"{job.job_number or job.job_name or 'Job'} Checkouts.xlsx"
+        default_name = (
+            f"{job.job_number or job.job_name or 'Job'} Checkouts.xlsx"
+            if job else "Checkouts.xlsx"
+        )
         path, _ = QFileDialog.getSaveFileName(
             self, "Export All Checkouts", default_name,
             "Excel Workbook (*.xlsx)"
@@ -2734,6 +2838,7 @@ class MainWindow(QMainWindow):
 
     def _load_record(self, record: Optional[ValveCheckout]) -> None:
         self._loading = True
+        self._model_user_modified = False   # reset per-record; auto-fill can run again
         self._current_id = record.id if record else None
         self._tabs.setEnabled(record is not None)
 
@@ -2789,6 +2894,8 @@ class MainWindow(QMainWindow):
                 cb.setChecked(w.get(f"{prefix}_{idx}_{fld}", False))
                 cb.blockSignals(False)
         for sash_cb in (self._celeris_sash_cb, self._cscp_sash_cb):
+            if sash_cb is None:
+                continue
             sash_cb.blockSignals(True)
             sash_cb.setChecked(record.sash_sensor_mounted)
             sash_cb.blockSignals(False)
@@ -2893,8 +3000,10 @@ class MainWindow(QMainWindow):
 
         # ── Celeris panel visibility (page 0 only) ────────────────────────────
         self._bb_panel.setVisible(celeris_fh)
-        self._celeris_sash_cb.setVisible(celeris_fh)
-        self._cscp_sash_cb.setVisible(cscp_fh)
+        if self._celeris_sash_cb:
+            self._celeris_sash_cb.setVisible(celeris_fh)
+        if self._cscp_sash_cb:
+            self._cscp_sash_cb.setVisible(cscp_fh)
         sash_text = "Sash Open Signal" if celeris_fh else ""
         for tbl_row in (1, 2):
             item = self._phoenix_table.item(tbl_row, 2)
@@ -2925,9 +3034,10 @@ class MainWindow(QMainWindow):
         self._vfy_table.setFixedHeight(hdr_h + visible_vfy * self._vfy_row_height + 4)
 
         # ── Model field — auto-fill default when switching types ──────────────
+        # Only auto-fill if the user has not manually edited the field this session.
         new_default = self._MODEL_DEFAULTS.get(valve_type, "")
         current = self._f_model.text()
-        if not current or current in self._MODEL_DEFAULTS.values():
+        if not current or (not self._model_user_modified and current in self._MODEL_DEFAULTS.values()):
             self._f_model.setText(new_default)
 
     def _wiring_boards(self) -> list[tuple[dict, str]]:
@@ -2939,6 +3049,15 @@ class MainWindow(QMainWindow):
             (self._pbc_l_cbs, "pbc_l"),
             (self._pbc_r_cbs, "pbc_r"),
         ]
+
+    def _on_model_user_edit(self) -> None:
+        self._model_user_modified = True
+
+    def _update_notes_counter(self) -> None:
+        text = self._notes_edit.toPlainText()
+        lines = len(text.splitlines()) if text.strip() else 0
+        self._notes_line_lbl.setText(f"{lines} / {NOTES_MAX_LINES} lines (export limit)")
+        self._notes_line_lbl.setStyleSheet("color: #ef4444;" if lines > NOTES_MAX_LINES else "")
 
     def _on_any_change(self) -> None:
         if self._loading or self._current_id is None:
@@ -2971,7 +3090,7 @@ class MainWindow(QMainWindow):
             for (idx, fld), cb in cbs.items():
                 w[f"{prefix}_{idx}_{fld}"] = cb.isChecked()
         record.wiring = w
-        record.sash_sensor_mounted = self._sash_sensor_cb.isChecked()
+        record.sash_sensor_mounted = self._sash_sensor_cb.isChecked() if self._sash_sensor_cb else False
 
         cfg: dict = {}
         for key, _ in CONFIG_ROWS:
@@ -2992,8 +3111,12 @@ class MainWindow(QMainWindow):
         # Update tree item label + color in-place (no full rebuild)
         for i in range(self._tree.topLevelItemCount()):
             job_item = self._tree.topLevelItem(i)
+            if job_item is None:
+                continue
             for j in range(job_item.childCount()):
                 child = job_item.child(j)
+                if child is None:
+                    continue
                 _, cid = child.data(0, self._ROLE)
                 if cid == self._current_id:
                     child.setText(0, record.valve_tag or "(No Tag)")
@@ -3031,8 +3154,9 @@ class MainWindow(QMainWindow):
             self._notes_edit.setPlainText(current + inserted)
             self._last_inserted_snippet = inserted
             self._remove_snippet_btn.setEnabled(True)
+        # Reset to placeholder so the same snippet can be selected again next time
         self._notes_template_combo.blockSignals(True)
-        self._notes_template_combo.setCurrentIndex(idx)   # keep selection visible
+        self._notes_template_combo.setCurrentIndex(0)
         self._notes_template_combo.blockSignals(False)
 
     def _on_remove_snippet_from_notes(self) -> None:
@@ -3048,6 +3172,12 @@ class MainWindow(QMainWindow):
 
     def _backup_data(self) -> None:
         from datetime import date as _date
+        if not os.path.exists(DATA_FILE):
+            QMessageBox.information(
+                self, "No Data",
+                "No data has been saved yet.\nCreate a job first, then back up."
+            )
+            return
         default_name = f"Phoenix_Checkout_Backup_{_date.today().isoformat()}.json"
         path, _ = QFileDialog.getSaveFileName(
             self, "Backup Data", default_name,
@@ -3070,6 +3200,8 @@ class MainWindow(QMainWindow):
         )
 
     def _show_version_history(self) -> None:
+        from updater import GITHUB_OWNER, GITHUB_REPO
+
         dialog = QDialog(self)
         dialog.setWindowTitle("Version History & Recent Updates")
         dialog.setModal(True)
@@ -3094,51 +3226,38 @@ class MainWindow(QMainWindow):
         btn_row.addWidget(close_btn)
         layout.addLayout(btn_row)
 
-        dialog.show()
-        QApplication.processEvents()
-
-        from updater import GITHUB_OWNER, GITHUB_REPO
-        try:
-            import urllib.request, json as _json
-            url = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases?per_page=100"
-            req = urllib.request.Request(
-                url,
-                headers={
-                    "Accept": "application/vnd.github+json",
-                    "User-Agent": "PhoenixCheckoutTool",
-                    "Cache-Control": "no-cache",
-                    "Pragma": "no-cache",
-                },
-            )
-            with urllib.request.urlopen(req, timeout=8) as resp:
-                releases = _json.loads(resp.read().decode())
-
+        def _on_releases(releases: list) -> None:
             if not releases:
                 text_area.setPlainText("No releases found on GitHub.")
                 header.setText("Version History")
-            else:
-                lines = []
-                for rel in releases:
-                    name  = rel.get("name") or rel.get("tag_name", "")
-                    date  = rel.get("published_at", "")[:10]
-                    raw   = rel.get("body", "").strip() or "No release notes."
-                    notes = re.sub(r"#{1,6}\s*", "", raw)
-                    notes = re.sub(r"\*{1,2}(.+?)\*{1,2}", r"\1", notes)
-                    lines.append(f"{name}  ({date})")
-                    lines.append("─" * 48)
-                    lines.append(notes)
-                    lines.append("")
-                text_area.setPlainText("\n".join(lines))
-                count = len(releases)
-                header.setText(f"Version History  ({count} release{'s' if count != 1 else ''})")
+                return
+            lines = []
+            for rel in releases:
+                name  = rel.get("name") or rel.get("tag_name", "")
+                date  = rel.get("published_at", "")[:10]
+                raw   = rel.get("body", "").strip() or "No release notes."
+                notes = re.sub(r"#{1,6}\s*", "", raw)
+                notes = re.sub(r"\*{1,2}(.+?)\*{1,2}", r"\1", notes)
+                lines.append(f"{name}  ({date})")
+                lines.append("─" * 48)
+                lines.append(notes)
+                lines.append("")
+            text_area.setPlainText("\n".join(lines))
+            count = len(releases)
+            header.setText(f"Version History  ({count} release{'s' if count != 1 else ''})")
 
-        except Exception as exc:
+        def _on_error(msg: str) -> None:
             text_area.setPlainText(
-                f"Could not fetch release history.\n\nError: {exc}\n\n"
+                f"Could not fetch release history.\n\nError: {msg}\n\n"
                 "You can view the full history at:\n"
                 f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/releases"
             )
             header.setText("Version History")
+
+        fetcher = _ReleasesFetcher(dialog)
+        fetcher.done.connect(_on_releases)
+        fetcher.error.connect(_on_error)
+        fetcher.start()
 
         dialog.exec()
 
@@ -3200,10 +3319,43 @@ class MainWindow(QMainWindow):
     def _install_update(self) -> None:
         if not self._update_info:
             return
-        try:
-            updater.download_and_apply(self._update_info)
-        except RuntimeError as exc:
-            QMessageBox.critical(self, "Update Failed", str(exc))
+
+        info = self._update_info
+
+        progress_dlg = QProgressDialog("Downloading update…", "Cancel", 0, 100, self)
+        progress_dlg.setWindowTitle("Installing Update")
+        progress_dlg.setWindowModality(Qt.WindowModality.WindowModal)
+        progress_dlg.setMinimumDuration(0)
+        progress_dlg.setValue(0)
+
+        downloader = _UpdateDownloader(info, self)
+
+        def _on_progress(done: int, total: int) -> None:
+            if progress_dlg.wasCanceled():
+                return
+            if total > 0:
+                progress_dlg.setMaximum(100)
+                progress_dlg.setValue(int(done / total * 100))
+            else:
+                progress_dlg.setMaximum(0)
+
+        def _on_ready(tmp_zip: str) -> None:
+            progress_dlg.close()
+            try:
+                updater.apply_update(info, Path(tmp_zip))
+            except RuntimeError as exc:
+                QMessageBox.critical(self, "Update Failed", str(exc))
+
+        def _on_failed(msg: str) -> None:
+            progress_dlg.close()
+            QMessageBox.critical(self, "Update Failed", msg)
+
+        downloader.progress.connect(_on_progress)
+        downloader.ready.connect(_on_ready)
+        downloader.failed.connect(_on_failed)
+        progress_dlg.canceled.connect(downloader.terminate)
+        downloader.start()
+        progress_dlg.exec()
 
 
 # ── Themes ────────────────────────────────────────────────────────────────────
