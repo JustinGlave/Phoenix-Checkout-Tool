@@ -13,6 +13,24 @@ set APP_MAIN=checkout_tool_gui.py
 set APP_ICON=PTT_Normal_green.ico
 :: ─────────────────────────────────────────────────────────────
 
+:: Phase 3B retrofit preflight: verify the phoenix-commons submodule is
+:: initialised (ADR-015 — submodule + editable install is the official
+:: transport). A fresh clone needs `git submodule update --init --recursive`
+:: before `pip install -r requirements.txt` can resolve the `-e ./commons` line.
+if not exist "commons\src\phoenix_commons\__init__.py" (
+    echo.
+    echo ERROR: phoenix-commons submodule missing. Run:
+    echo        git submodule update --init --recursive
+    echo        pip install -r requirements.txt
+    exit /b 1
+)
+python -c "import phoenix_commons" >nul 2>&1
+if errorlevel 1 (
+    echo ERROR: phoenix_commons not importable. Re-install:
+    echo        pip install -e .\commons
+    exit /b 1
+)
+
 :: Read version from version.py
 for /f "tokens=3 delims= " %%v in ('findstr "__version__" version.py') do set VERSION=%%~v
 
@@ -31,12 +49,12 @@ pyinstaller ^
     --name=%APP_NAME% ^
     --add-data="%APP_ICON%;." ^
     --add-data="green.png;." ^
-    --add-data="phoenix_style.qss;." ^
     --add-data="checkout_template.xlsx;." ^
     --add-data="template_gex.xlsx;." ^
     --add-data="template_mav.xlsx;." ^
     --add-data="template_cscp_fh.xlsx;." ^
     --add-data="template_pbc_room.xlsx;." ^
+    --collect-all=phoenix_commons ^
     %APP_MAIN%
 
 if errorlevel 1 (
