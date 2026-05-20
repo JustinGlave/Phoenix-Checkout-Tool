@@ -1,0 +1,72 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint:
+    name: Syntax & import check
+    runs-on: windows-latest
+
+    steps:
+      # Phase 3B retrofit: phoenix-commons is consumed as a git submodule
+      # under commons/ per ADR-015. Fresh checkouts must initialise the
+      # submodule before `pip install -r requirements.txt` resolves the
+      # `-e ./commons` editable line.
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Python 3.12 (canonical platform version — ADR-014)
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        # requirements.txt contains `-e ./commons` (phoenix-commons
+        # editable install) per ADR-015. Submodule must be populated
+        # before this step (covered by `submodules: recursive` above).
+        run: pip install -r requirements.txt
+
+      - name: Syntax check all project Python files
+        run: |
+          python -m py_compile version.py
+          python -m py_compile checkout_export.py
+          python -m py_compile checkout_tool_backend.py
+          python -m py_compile checkout_tool_gui.py
+          python -m py_compile updater.py
+
+      - name: Version format check
+        run: |
+          python -c "from pathlib import Path; import re; ns={}; exec(Path('version.py').read_text(encoding='utf-8'), ns); v = ns['__version__']; assert re.fullmatch(r'\d+\.\d+\.\d+', v), f'__version__ must be X.Y.Z, got {v!r}'; print(f'version ok: {v}')"
+
+      - name: Import check (catches missing deps and bad top-level code)
+        # GUI module (checkout_tool_gui) is excluded — it loads Qt platform
+        # plugins which require a real display context.
+        #
+        # The B8 regression (NameError: 'os' is not defined in
+        # CheckoutStore._load) proved that import-only smoke is
+        # insufficient for catching runtime-only name errors that live
+        # inside function bodies — see MIGRATION_RULES.md § 10 row 11.
+        # Source-mode launch verification is therefore the responsibility
+        # of the release checklist, not CI. CI catches the structural
+        # class of regression only.
+        #
+        # `import phoenix_commons` confirms the submodule install
+        # resolved — catches the case where `submodules: recursive`
+        # failed silently OR the `-e ./commons` line in requirements.txt
+        # was dropped.
+        run: |
+          python -c "import phoenix_commons; print('commons', phoenix_commons.__version__)"
+          python -c "import version"
+          python -c "import checkout_export"
+          python -c "import checkout_tool_backend"
+          python -c "import updater"
+
+      # Regression tests are not yet wired up. When `tests/` exists,
+      # replace this step with `pytest -q tests/`.
+      - name: Regression tests (placeholder)
+        run: echo "No tests directory yet — TODO when tests/ is added."
