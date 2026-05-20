@@ -5,6 +5,7 @@ checkout_tool_backend.py — Data and storage logic for Phoenix Valve Checkout T
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from dataclasses import dataclass, field, asdict
 from typing import Optional
