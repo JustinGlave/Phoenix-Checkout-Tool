@@ -7,5 +7,4 @@ dist/
 build/
 *.spec
 .claude/
-CLAUDE.md
 memory/
