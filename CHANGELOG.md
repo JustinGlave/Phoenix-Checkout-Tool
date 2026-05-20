@@ -29,7 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
   3.12 per ADR-014, submodule init, compileall, import smoke).
   Operational Hardening Sprint 2026-05-19.
 
-## [1.7.0] — 2025
+## [1.7.0] — 2026-05-04
 
 Bug-fix release with auto-updater improvements.
 
