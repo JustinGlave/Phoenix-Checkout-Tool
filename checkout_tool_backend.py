@@ -5,18 +5,27 @@ checkout_tool_backend.py — Data and storage logic for Phoenix Valve Checkout T
 from __future__ import annotations
 
 import json
-import os
 import uuid
 from dataclasses import dataclass, field, asdict
-from pathlib import Path
 from typing import Optional
+
+from phoenix_commons.paths import user_data_dir as _commons_user_data_dir
 
 
 def _app_data_path(filename: str) -> str:
-    """Path to user data in %APPDATA%\\ATS Inc\\Phoenix Valve Checkout Tool\\."""
-    base = Path(os.environ.get("APPDATA", Path.home())) / "ATS Inc" / "Phoenix Valve Checkout Tool"
-    base.mkdir(parents=True, exist_ok=True)
-    return str(base / filename)
+    """Path to user data in %APPDATA%\\ATS Inc\\Phoenix Valve Checkout Tool\\.
+
+    Phase 3B retrofit: delegates to ``phoenix_commons.paths.user_data_dir``.
+    Behavior preserved byte-for-byte — commons creates the directory if
+    missing (matches pre-retrofit ``base.mkdir(parents=True, exist_ok=True)``).
+    Verified pre-retrofit: ``_app_data_path('data.json')`` produces the same
+    string both before and after this change.
+
+    Kept as a local function (not removed) so existing callers
+    (``DATA_FILE = _app_data_path("data.json")`` + ``checkout_export.py``)
+    continue working unchanged.
+    """
+    return str(_commons_user_data_dir("Phoenix Valve Checkout Tool", "ATS Inc") / filename)
 
 
 DATA_FILE = _app_data_path("data.json")
