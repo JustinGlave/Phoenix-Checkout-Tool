@@ -1,5 +1,5 @@
 """
-updater.py — GitHub-based auto-updater.
+updater.py — Phoenix Valve Checkout Tool auto-updater (Phase 3B retrofit).
 
 How it works
 ------------
@@ -11,6 +11,30 @@ How it works
 4. When the user clicks the button, the GUI calls download_update() in a
    background thread (with a progress callback), then apply_update() on the
    main thread once the download is complete.
+
+Phase 3B retrofit notes
+-----------------------
+- ``check_for_update`` now facades to
+  ``phoenix_commons.updater.check_for_update``. The zero-arg local
+  signature is preserved.
+- ``UpdateInfo`` is re-imported from commons so types match across the
+  facade boundary (callers' ``Optional[updater.UpdateInfo]`` annotations
+  resolve to the same class).
+- ``download_update`` / ``apply_update`` STAY LOCAL — commons has no
+  split download/apply API; Checkout's threaded-install behavior (added
+  in v1.7.0) depends on the split. Per
+  MIGRATION_RULES.md § "Delete duplication, not behaviour", preserving
+  the threaded-install behavior takes precedence over consuming commons
+  symmetry. The split pattern is documented as a future commons-API
+  candidate in Phase 3B's post-retrofit report.
+- ``download_and_apply`` (the convenience wrapper around
+  download_update + apply_update) is kept local to maintain the existing
+  module's complete public surface. The GUI does NOT call this wrapper;
+  it uses the split API directly.
+- Phoenix Checkout's updater payload contract is **exe-only**
+  (``expected_internal=False`` semantics per ADR-003). This is preserved
+  exactly — Checkout's apply_update extracts only ``EXE_NAME`` from the
+  zip via PowerShell, never references ``_internal/``.
 
 Configuration
 -------------
@@ -25,15 +49,18 @@ import os
 import sys
 import subprocess
 import tempfile
-import urllib.request
-import urllib.error
-import json
 import logging
-from dataclasses import dataclass
 from typing import Optional
 from pathlib import Path
+import urllib.request
+import urllib.error
 
 from version import __version__
+
+from phoenix_commons.updater import (
+    UpdateInfo,
+    check_for_update as _commons_check_for_update,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -44,68 +71,25 @@ ZIP_ASSET_NAME = "PhoenixCheckoutTool.zip"
 EXE_NAME       = "PhoenixCheckoutTool.exe"
 # ──────────────────────────────────────────────────────────────────────────────
 
-RELEASES_API    = f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
-REQUEST_TIMEOUT = 8
-
-
-@dataclass
-class UpdateInfo:
-    current_version: str
-    latest_version:  str
-    download_url:    str
-    release_notes:   str
-
-
-def _parse_version(tag: str) -> tuple[int, ...]:
-    cleaned = tag.lstrip("vV").strip()
-    try:
-        return tuple(int(part) for part in cleaned.split("."))
-    except ValueError:
-        return (0,)
-
 
 def check_for_update() -> Optional[UpdateInfo]:
+    """Query the GitHub Releases API for ``Phoenix-Checkout-Tool``.
+
+    Returns :class:`UpdateInfo` if a newer release is available, otherwise
+    ``None``. Safe to call from a background thread — never raises (network
+    failures + payload-parse errors are logged inside the commons
+    implementation, never propagated).
+
+    Phase 3B retrofit: facade over
+    :func:`phoenix_commons.updater.check_for_update`. The zero-arg local
+    signature is preserved; the 4 config constants above are passed through.
     """
-    Query the GitHub Releases API.
-    Returns UpdateInfo if a newer version is available, otherwise None.
-    Safe to call from a background thread — never raises.
-    """
-    try:
-        req = urllib.request.Request(
-            RELEASES_API,
-            headers={"Accept": "application/vnd.github+json", "User-Agent": EXE_NAME},
-        )
-        with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
-            data = json.loads(resp.read().decode())
-
-        latest_tag = data.get("tag_name", "")
-        if not latest_tag:
-            return None
-        if _parse_version(latest_tag) <= _parse_version(__version__):
-            return None
-
-        assets = data.get("assets", [])
-        zip_asset = next(
-            (a for a in assets if a.get("name", "").lower() == ZIP_ASSET_NAME.lower()),
-            None,
-        )
-        if zip_asset is None:
-            logger.warning("New release %s found but asset %s not attached.", latest_tag, ZIP_ASSET_NAME)
-            return None
-
-        return UpdateInfo(
-            current_version=__version__,
-            latest_version=latest_tag.lstrip("vV"),
-            download_url=zip_asset["browser_download_url"],
-            release_notes=data.get("body", "").strip(),
-        )
-
-    except urllib.error.URLError as exc:
-        logger.debug("Update check failed (network): %s", exc)
-        return None
-    except Exception as exc:
-        logger.warning("Update check failed: %s", exc)
-        return None
+    return _commons_check_for_update(
+        owner=GITHUB_OWNER,
+        repo=GITHUB_REPO,
+        current_version=__version__,
+        zip_asset_name=ZIP_ASSET_NAME,
+    )
 
 
 def download_update(info: UpdateInfo, tmp_zip: Path,
@@ -116,6 +100,12 @@ def download_update(info: UpdateInfo, tmp_zip: Path,
     progress_callback(bytes_done, total_bytes) is called during download.
     Raises RuntimeError on failure so the caller can show an error dialog.
     Safe to call from a background thread.
+
+    Phase 3B note: kept LOCAL (not a commons facade). Commons exposes only
+    the combined ``download_and_apply`` — splitting download from apply
+    is Checkout-specific (v1.7.0 threaded-install behavior).
+    ``expected_internal=False`` semantics: no zip-content validation here;
+    the apply step extracts ``EXE_NAME`` directly via PowerShell.
     """
     try:
         req = urllib.request.Request(
@@ -154,6 +144,11 @@ def apply_update(info: UpdateInfo, tmp_zip: Path) -> None:
     Must be called from the compiled exe (sys.frozen). Never returns normally —
     it launches the batch and calls sys.exit(0).
     Raises RuntimeError if the environment is wrong.
+
+    Phase 3B note: kept LOCAL. Implements Checkout's exe-only updater
+    payload contract — extracts ``EXE_NAME`` from the zip and copies over
+    the existing install's exe. Does NOT touch ``_internal/``
+    (``expected_internal=False`` per ADR-003).
     """
     if not getattr(sys, "frozen", False):
         raise RuntimeError(
@@ -202,6 +197,10 @@ def download_and_apply(info: UpdateInfo, progress_callback=None) -> None:
 
     Convenience wrapper around download_update() + apply_update().
     Raises RuntimeError on failure so the caller can show an error dialog.
+
+    Phase 3B note: kept LOCAL. The GUI does NOT call this wrapper — it
+    uses the split download_update + apply_update pattern (threaded-install).
+    Retained as a public convenience for any external caller.
     """
     if not getattr(sys, "frozen", False):
         raise RuntimeError(
@@ -220,3 +219,16 @@ def download_and_apply(info: UpdateInfo, progress_callback=None) -> None:
         raise
 
     apply_update(info, tmp_zip)
+
+
+__all__ = [
+    # Tool-specific config (used by GUI via `updater.GITHUB_OWNER` etc.)
+    "GITHUB_OWNER", "GITHUB_REPO", "ZIP_ASSET_NAME", "EXE_NAME",
+    # Public UpdateInfo dataclass — re-exported from commons.
+    "UpdateInfo",
+    # Public API.
+    "check_for_update",
+    "download_update",
+    "apply_update",
+    "download_and_apply",
+]
