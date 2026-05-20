@@ -27,43 +27,23 @@ from checkout_export import export_records, NOTES_MAX_LINES
 from version import __version__
 import updater
 
-# ── Phoenix component helpers ─────────────────────────────────────────────────
+# ── Phoenix component helpers — Phase 3B retrofit ────────────────────────────
+#
+# Pre-retrofit: PrimaryButton, SecondaryButton, TertiaryButton, _PhoenixTable
+# were defined inline here as classes byte-identical to the canonical
+# phoenix_commons.widgets.* port. Phase 3B retrofit replaces the 4 inline
+# classes with commons re-exports — same Python class objects, no behavior
+# change. Caller sites elsewhere in this file are unchanged.
+#
+# `_PhoenixTable` keeps its underscore-prefixed local name (4 call sites)
+# by being imported as an alias from commons's `PhoenixTable`.
 
-class PrimaryButton(QPushButton):
-    """Red primary-action button with pointer cursor and consistent height."""
-    def __init__(self, text: str, parent=None):
-        super().__init__(text, parent)
-        self.setMinimumHeight(36)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-
-
-class SecondaryButton(QPushButton):
-    """Blue secondary-action button."""
-    def __init__(self, text: str, parent=None):
-        super().__init__(text, parent)
-        self.setObjectName("secondaryButton")
-        self.setMinimumHeight(36)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-
-
-class TertiaryButton(QPushButton):
-    """Outline tertiary button for low-emphasis actions."""
-    def __init__(self, text: str, parent=None):
-        super().__init__(text, parent)
-        self.setObjectName("tertiaryButton")
-        self.setMinimumHeight(36)
-        self.setCursor(Qt.CursorShape.PointingHandCursor)
-
-
-class _PhoenixTable(QTableWidget):
-    """Read-only data table with standard Phoenix styling defaults."""
-    def __init__(self, rows: int, cols: int, parent=None):
-        super().__init__(rows, cols, parent)
-        self.verticalHeader().setVisible(False)
-        self.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
-        self.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
-        self.setFocusPolicy(Qt.FocusPolicy.NoFocus)
-        self.setAlternatingRowColors(True)
+from phoenix_commons.widgets import (
+    PrimaryButton,
+    SecondaryButton,
+    TertiaryButton,
+    PhoenixTable as _PhoenixTable,
+)
 
 
 # ── Wiring structure constants ────────────────────────────────────────────────
