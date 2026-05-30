@@ -69,6 +69,9 @@ pyinstaller ^
     --add-data="template_mav.xlsx;." ^
     --add-data="template_cscp_fh.xlsx;." ^
     --add-data="template_pbc_room.xlsx;." ^
+    --hidden-import=openpyxl ^
+    --hidden-import=openpyxl.cell._writer ^
+    --collect-submodules=openpyxl ^
     --collect-all=phoenix_commons ^
     --exclude-module=tkinter ^
     --exclude-module=_tkinter ^
