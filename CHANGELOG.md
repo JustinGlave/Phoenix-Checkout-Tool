@@ -8,7 +8,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.7.1] — 2026-05-30
+
+Release hardening + openpyxl dependency declaration — no functional changes.
+
 ### Changed
+- **Build pipeline aligned with FROZEN_BUILD_BASELINE** (release
+  hardening, 2026-05-29 → merged 2026-05-30). `build.bat` now
+  enforces Python 3.12 soft-warn + Step 0 full cleanup
+  (`rmdir /s /q dist build`) + `--noupx` + 8× stdlib
+  `--exclude-module` (tkinter/tcl/tk/lib2to3/idlelib/turtle/
+  turtledemo) at PyInstaller invocation. S1-safe profile per
+  ADR-014 / FROZEN_BUILD_BASELINE.md. AppId behavior, install
+  path, user-data path, and updater zip naming all preserved.
+- **`openpyxl` runtime dependency declared** in `requirements.txt`
+  (was previously imported but not pinned). PyInstaller hidden
+  import + `--collect-submodules=openpyxl` added so xlsx
+  templates load correctly inside the frozen exe. Root-cause of
+  prior post-retrofit `ModuleNotFoundError` at startup.
+
+### Added (carried from Phase 3B unreleased work)
 - **Phase 3B retrofit (2026-05-19)**: migrated to commons-backed
   pattern per ADR-015 (`phoenix-commons` git submodule + editable
   install). Theme + widgets + `_app_data_path` + updater
