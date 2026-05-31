@@ -3,6 +3,12 @@ PySide6_Addons==6.11.0
 PySide6_Essentials==6.11.0
 shiboken6==6.11.0
 
+# Excel I/O — checkout_export.py uses load_workbook, Workbook, Font,
+# MergedCell, DataValidation. Declared explicitly so fresh-venv frozen
+# builds bundle it (PyInstaller's static analysis can miss imports that
+# live inside a sub-module not on the entry-point path).
+openpyxl==3.1.5
+
 # Phoenix UI Platform — installed as a git submodule + editable install
 # per ADR-015. Submodule lives at commons/ (see .gitmodules). Refresh
 # the submodule SHA via `git submodule update --remote commons` when

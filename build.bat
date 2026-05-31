@@ -13,6 +13,16 @@ set APP_MAIN=checkout_tool_gui.py
 set APP_ICON=PTT_Normal_green.ico
 :: ─────────────────────────────────────────────────────────────
 
+:: Python 3.12 soft-warn (FROZEN_BUILD_BASELINE / ADR-014)
+for /f "tokens=2" %%P in ('python --version 2^>^&1') do set PYTHON_VERSION=%%P
+echo Detected Python: %PYTHON_VERSION%
+echo %PYTHON_VERSION% | findstr /b "3.12." >nul
+if errorlevel 1 (
+    echo WARNING: Canonical frozen-build venv is Python 3.12 per ADR-014 / FROZEN_BUILD_BASELINE.
+    echo          Current interpreter is %PYTHON_VERSION%. Build will proceed but the
+    echo          S1-safe bootloader profile is only verified on 3.12.
+)
+
 :: Phase 3B retrofit preflight: verify the phoenix-commons submodule is
 :: initialised (ADR-015 — submodule + editable install is the official
 :: transport). A fresh clone needs `git submodule update --init --recursive`
@@ -34,6 +44,10 @@ if errorlevel 1 (
 :: Read version from version.py
 for /f "tokens=3 delims= " %%v in ('findstr "__version__" version.py') do set VERSION=%%~v
 
+:: Step 0: full cleanup (FROZEN_BUILD_BASELINE)
+if exist dist  rmdir /s /q dist
+if exist build rmdir /s /q build
+
 echo ============================================================
 echo  Building %APP_NAME% v%VERSION%
 echo ============================================================
@@ -45,6 +59,7 @@ pyinstaller ^
     --onedir ^
     --windowed ^
     --noconfirm ^
+    --noupx ^
     --icon=%APP_ICON% ^
     --name=%APP_NAME% ^
     --add-data="%APP_ICON%;." ^
@@ -54,7 +69,18 @@ pyinstaller ^
     --add-data="template_mav.xlsx;." ^
     --add-data="template_cscp_fh.xlsx;." ^
     --add-data="template_pbc_room.xlsx;." ^
+    --hidden-import=openpyxl ^
+    --hidden-import=openpyxl.cell._writer ^
+    --collect-submodules=openpyxl ^
     --collect-all=phoenix_commons ^
+    --exclude-module=tkinter ^
+    --exclude-module=_tkinter ^
+    --exclude-module=tcl ^
+    --exclude-module=tk ^
+    --exclude-module=lib2to3 ^
+    --exclude-module=idlelib ^
+    --exclude-module=turtle ^
+    --exclude-module=turtledemo ^
     %APP_MAIN%
 
 if errorlevel 1 (
