@@ -8,3 +8,8 @@ build/
 *.spec
 .claude/
 memory/
+.venv/
+.venv*/
+venv/
+env/
+ENV/
