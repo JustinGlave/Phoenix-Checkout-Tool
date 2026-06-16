@@ -214,10 +214,13 @@ def _num_or_text(value) -> Optional[object]:
         return s
 
 
-def _enable_notes_wrap(ws) -> None:
-    """Force wrap_text on the Notes column (K) data rows, preserving other alignment.
+def _format_notes_rows(ws) -> None:
+    """Wrap the Notes column (K) and let the data rows auto-fit their height.
 
-    Only alignment is touched; fonts/fills/borders/number_format are untouched.
+    Sets wrap_text on K15:K54 (preserving each cell's other alignment), and clears
+    the template's fixed custom row height on rows 15-54 so Excel auto-fits the
+    wrapped Notes text instead of clipping it. Only alignment + row height change;
+    fonts/fills/borders/number_format are untouched.
     """
     for r in range(FIRST_DATA_ROW, LAST_DATA_ROW + 1):
         cell = ws[f"K{r}"]
@@ -230,6 +233,10 @@ def _enable_notes_wrap(ws) -> None:
             shrink_to_fit=al.shrink_to_fit,
             indent=al.indent,
         )
+        # Drop the template's fixed 15pt custom height so Excel auto-fits the wrapped
+        # Notes row. (customHeight is a derived read-only property: clearing height
+        # makes it False, which tells Excel to auto-size the row.)
+        ws.row_dimensions[r].height = None
 
 
 # ── Public export entry point ───────────────────────────────────────────────────
@@ -269,7 +276,7 @@ def export_startup_report(meta: StartupReportMeta, records, output_path: str) ->
         # J (Face Velocity FPM) — blank for v1
         _set(ws, f"K{r}", getattr(rec, "notes", "") or "")
 
-    # Notes column (K) wraps long text on the data rows (preserve other alignment).
-    _enable_notes_wrap(ws)
+    # Notes column (K) wraps long text and the data rows auto-fit their height.
+    _format_notes_rows(ws)
 
     wb.save(output_path)

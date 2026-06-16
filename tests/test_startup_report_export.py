@@ -275,26 +275,43 @@ class LocationRoomTests(unittest.TestCase):
 
 
 class RemovedFieldsTests(unittest.TestCase):
-    # Operator-flagged columns that must NOT be written by the app.
-    REMOVED = {
-        "M": "Mag Diff Pressure", "R": "Primary Air from AHU", "T": "Htg Offset",
-        "U": "Clg Offset", "X": "Exhaust Damper Pos.", "Z": "Verify Schedule",
-        "Y": "Air Differential", "AC": "Linkage Cotter Pins",
-    }
+    # 8 detail columns removed from the template surface per operator request.
+    BANNED = {"Mag Diff Pressure", "Primary Air from AHU", "Htg Offset", "Clg Offset",
+              "Exhaust Damper Pos.", "Air Differential", "Verify Schedule",
+              "Linkage Cotter Pins"}
+    # Detail columns that must remain after the removal.
+    REMAINING = ["Voltage", "Space Temp SP", "Space Temp", "Supply AF CMD",
+                 "Supply Feedback", "Supply Damper Pos.", "Exhaust CMD",
+                 "Exhaust Feedback", "Modify Space Temp SP (DDC)",
+                 'DP Alarm (trips at .3"wc)', "Wiring Issues", "Pressure Tubes"]
 
-    def test_removed_fields_not_written(self):
-        rec = make_record(valve_tag="V1", valve_type="Fume Hood", pass_fail="Pass",
-                          notes="some notes", location_room="Rm 1")
-        wb, ws, _ = export_to_temp(StartupReportMeta(project="P"), [rec])
-        for col, name in self.REMOVED.items():
-            self.assertIsNone(ws[f"{col}15"].value, f"{col} ({name}) should be blank")
+    def _headers(self, ws):
+        return [ws.cell(14, c).value for c in range(1, ws.max_column + 1) if ws.cell(14, c).value]
 
-    def test_no_hidden_detail_column_written(self):
-        # The whole L..AE band stays blank on a populated data row.
+    def test_removed_headers_absent(self):
+        wb, ws, _ = export_to_temp(StartupReportMeta(project="P"),
+                                   [make_record(valve_tag="V1", pass_fail="Pass")])
+        still_present = self.BANNED & set(self._headers(ws))
+        self.assertEqual(still_present, set(), f"banned headers still present: {still_present}")
+
+    def test_removed_headers_absent_in_template(self):
+        # The embedded template itself no longer carries the columns.
+        ws = openpyxl.load_workbook(template_stream())["Startup Report"]
+        hdrs = [ws.cell(14, c).value for c in range(1, ws.max_column + 1)]
+        self.assertEqual(self.BANNED & set(h for h in hdrs if h), set())
+
+    def test_remaining_detail_headers_present(self):
+        wb, ws, _ = export_to_temp(StartupReportMeta(), [make_record(valve_tag="V1")])
+        present = self._headers(ws)
+        for h in self.REMAINING:
+            self.assertIn(h, present, f"expected detail header missing: {h}")
+
+    def test_app_writes_no_detail_columns(self):
+        # The app still writes only B..K; every detail column (L onward) stays blank.
         from openpyxl.utils import get_column_letter
         rec = make_record(valve_tag="V1", pass_fail="Pass", notes="n", location_room="r")
         wb, ws, _ = export_to_temp(StartupReportMeta(), [rec])
-        for c in range(12, 32):  # L (12) .. AE (31)
+        for c in range(12, ws.max_column + 1):  # L onward
             self.assertIsNone(ws[f"{get_column_letter(c)}15"].value,
                               f"col {get_column_letter(c)} should be blank")
 
@@ -311,6 +328,15 @@ class NotesWrapTests(unittest.TestCase):
         wb, ws, _ = export_to_temp(StartupReportMeta(), [rec])
         # B column shouldn't have been forced to wrap by the Notes-only logic.
         self.assertEqual(ws["B15"].value, "V1")
+
+    def test_notes_rows_autofit_height(self):
+        # The template's fixed custom row height is cleared so Excel auto-fits wrap.
+        rec = make_record(valve_tag="V1", notes="line one\nline two\nline three")
+        wb, ws, _ = export_to_temp(StartupReportMeta(), [rec])
+        for r in (15, 30, 54):
+            rd = ws.row_dimensions[r]
+            self.assertFalse(bool(rd.customHeight), f"row {r} must not be custom height")
+            self.assertIsNone(rd.height, f"row {r} height must be cleared for auto-fit")
 
 
 class ExecutiveSummaryTests(unittest.TestCase):
