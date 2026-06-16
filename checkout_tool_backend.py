@@ -58,6 +58,7 @@ class ValveCheckout:
     date:           str = ""   # ISO yyyy-MM-dd
     technician:     str = ""
     description:    str = ""
+    location_room:  str = ""   # optional per-valve location (Startup Report col F)
     model:          str = "CELERIS 2"
     valve_type:     str = "Fume Hood"
     pass_fail:      str = ""   # "Pass" | "Fail" | ""

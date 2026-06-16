@@ -26,7 +26,7 @@ import startup_report_export as sr
 from startup_report_export import (
     StartupReportMeta, TooManyValvesError, MAX_VALVES,
     export_startup_report, prefill_meta, derive_product_lines,
-    map_product_line, map_valve_type, map_pass_fail,
+    map_product_line, map_valve_type, map_pass_fail, generate_executive_summary,
 )
 from startup_report_template import template_stream
 
@@ -34,8 +34,8 @@ from startup_report_template import template_stream
 def make_record(**kw):
     """A duck-typed checkout record with all attributes the engine reads."""
     base = dict(valve_tag="", project="", ats_job_number="", date="", technician="",
-                description="", model="", valve_type="Fume Hood", pass_fail="",
-                valve_min_sp="", valve_max_sp="", notes="", job_id="J1")
+                description="", location_room="", model="", valve_type="Fume Hood",
+                pass_fail="", valve_min_sp="", valve_max_sp="", notes="", job_id="J1")
     base.update(kw)
     return SimpleNamespace(**base)
 
@@ -239,6 +239,125 @@ class RealRecordCompatibilityTests(unittest.TestCase):
         self.assertEqual(ws["B15"].value, "REAL-1")
         self.assertEqual(ws["E15"].value, "General Exhaust")  # GEX -> General Exhaust
         self.assertEqual(ws["G15"].value, "PASS")
+
+
+class LocationRoomTests(unittest.TestCase):
+    def test_field_exists_with_blank_default(self):
+        from checkout_tool_backend import ValveCheckout
+        self.assertIn("location_room", ValveCheckout.__dataclass_fields__)
+        self.assertEqual(ValveCheckout().location_room, "")
+
+    def test_old_record_without_location_room_loads(self):
+        # Mirrors CheckoutStore._load: filter unknown keys by __dataclass_fields__.
+        from checkout_tool_backend import ValveCheckout
+        old = {"id": "x", "valve_tag": "V1", "valve_type": "Fume Hood"}  # no location_room
+        rec = ValveCheckout(**{k: v for k, v in old.items()
+                               if k in ValveCheckout.__dataclass_fields__})
+        self.assertEqual(rec.location_room, "")
+        self.assertEqual(rec.valve_tag, "V1")
+
+    def test_location_room_round_trips_on_real_record(self):
+        from checkout_tool_backend import ValveCheckout
+        from dataclasses import asdict
+        rec = ValveCheckout(valve_tag="V1", location_room="Lab 314")
+        reloaded = ValveCheckout(**asdict(rec))
+        self.assertEqual(reloaded.location_room, "Lab 314")
+
+    def test_location_room_writes_to_column_F(self):
+        rec = make_record(valve_tag="V1", location_room="Lab 314")
+        wb, ws, _ = export_to_temp(StartupReportMeta(), [rec])
+        self.assertEqual(ws["F15"].value, "Lab 314")
+
+    def test_blank_location_room_not_written(self):
+        rec = make_record(valve_tag="V1", location_room="")
+        wb, ws, _ = export_to_temp(StartupReportMeta(), [rec])
+        self.assertIsNone(ws["F15"].value)
+
+
+class RemovedFieldsTests(unittest.TestCase):
+    # Operator-flagged columns that must NOT be written by the app.
+    REMOVED = {
+        "M": "Mag Diff Pressure", "R": "Primary Air from AHU", "T": "Htg Offset",
+        "U": "Clg Offset", "X": "Exhaust Damper Pos.", "Z": "Verify Schedule",
+        "Y": "Air Differential", "AC": "Linkage Cotter Pins",
+    }
+
+    def test_removed_fields_not_written(self):
+        rec = make_record(valve_tag="V1", valve_type="Fume Hood", pass_fail="Pass",
+                          notes="some notes", location_room="Rm 1")
+        wb, ws, _ = export_to_temp(StartupReportMeta(project="P"), [rec])
+        for col, name in self.REMOVED.items():
+            self.assertIsNone(ws[f"{col}15"].value, f"{col} ({name}) should be blank")
+
+    def test_no_hidden_detail_column_written(self):
+        # The whole L..AE band stays blank on a populated data row.
+        from openpyxl.utils import get_column_letter
+        rec = make_record(valve_tag="V1", pass_fail="Pass", notes="n", location_room="r")
+        wb, ws, _ = export_to_temp(StartupReportMeta(), [rec])
+        for c in range(12, 32):  # L (12) .. AE (31)
+            self.assertIsNone(ws[f"{get_column_letter(c)}15"].value,
+                              f"col {get_column_letter(c)} should be blank")
+
+
+class NotesWrapTests(unittest.TestCase):
+    def test_notes_column_wraps_all_data_rows(self):
+        rec = make_record(valve_tag="V1", notes="a long note\nsecond line")
+        wb, ws, _ = export_to_temp(StartupReportMeta(), [rec])
+        for r in (15, 16, 30, 54):
+            self.assertTrue(ws[f"K{r}"].alignment.wrap_text, f"K{r} should wrap")
+
+    def test_wrap_does_not_break_other_columns(self):
+        rec = make_record(valve_tag="V1", notes="x")
+        wb, ws, _ = export_to_temp(StartupReportMeta(), [rec])
+        # B column shouldn't have been forced to wrap by the Notes-only logic.
+        self.assertEqual(ws["B15"].value, "V1")
+
+
+class ExecutiveSummaryTests(unittest.TestCase):
+    def test_writes_to_g4(self):
+        wb, ws, _ = export_to_temp(StartupReportMeta(executive_summary="Hello"), [])
+        self.assertEqual(ws["G4"].value, "Hello")
+
+    def test_summary_with_failures_lists_tags(self):
+        recs = [make_record(valve_tag="VAV-101", pass_fail="Pass"),
+                make_record(valve_tag="VAV-103", pass_fail="Fail"),
+                make_record(valve_tag="FH-204", pass_fail="Fail")]
+        s = generate_executive_summary(recs)
+        self.assertIn("3 valves checked", s)
+        self.assertIn("1 passed, 2 failed", s)
+        self.assertIn("VAV-103", s)
+        self.assertIn("FH-204", s)
+        self.assertIn("See Notes column", s)
+
+    def test_summary_all_pass(self):
+        recs = [make_record(valve_tag="A", pass_fail="Pass"),
+                make_record(valve_tag="B", pass_fail="Pass")]
+        self.assertEqual(generate_executive_summary(recs),
+                         "All checked valves passed. No issues noted.")
+
+    def test_summary_empty(self):
+        self.assertEqual(generate_executive_summary([]), "No valves checked.")
+
+    def test_summary_unset_no_failures(self):
+        recs = [make_record(valve_tag="A", pass_fail="Pass"),
+                make_record(valve_tag="B", pass_fail="")]
+        s = generate_executive_summary(recs)
+        self.assertIn("0 failed", s)
+        self.assertIn("No issues noted", s)
+
+    def test_summary_does_not_invent_issues(self):
+        # No "Fail" anywhere -> never mentions issues/failures count > 0.
+        recs = [make_record(valve_tag="A", pass_fail="Pass")]
+        s = generate_executive_summary(recs)
+        self.assertNotIn("failed.", s.replace("0 failed.", ""))
+        self.assertNotIn("Issue", s)
+
+    def test_prefill_includes_generated_summary(self):
+        recs = [make_record(valve_tag="A", pass_fail="Pass"),
+                make_record(valve_tag="BAD-1", pass_fail="Fail")]
+        meta = prefill_meta(recs[0], recs)
+        self.assertIn("BAD-1", meta.executive_summary)
+        self.assertIn("1 failed", meta.executive_summary)
 
 
 if __name__ == "__main__":

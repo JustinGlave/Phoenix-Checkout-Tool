@@ -23,6 +23,7 @@ from dataclasses import dataclass
 from typing import Iterable, Optional
 
 import openpyxl
+from openpyxl.styles import Alignment
 
 from startup_report_template import template_stream
 
@@ -46,8 +47,12 @@ META_CELLS = {
     "executive_summary": "G4",
 }
 
-# Valve row columns B..K (column A is auto-numbered; L..AE stay blank for v1).
-# F (Location / Room) and J (Face Velocity FPM) are intentionally blank for v1.
+# Valve row columns B..K (column A is auto-numbered). The hidden detailed-reading
+# columns L..AE are never written by the app (they stay blank) — including the
+# operator-flagged Mag Diff Pressure, Primary Air from AHU, Htg/Clg Offset, Exhaust
+# Damper Pos., Verify Schedule, Air Differential, and Linkage Cotter Pins.
+# F (Location / Room) is written from record.location_room; J (Face Velocity FPM)
+# is intentionally blank for v1.
 
 # ── Mapping tables (approved) ───────────────────────────────────────────────────
 _CSCP_TYPES = {"CSCP Fume Hood", "PBC Room"}
@@ -128,16 +133,49 @@ def derive_product_lines(records: Iterable) -> str:
     return ""
 
 
+def generate_executive_summary(records: Iterable) -> str:
+    """Generate a factual executive summary for cell G4 (editable before export).
+
+    Reports total / pass / fail counts and lists the failed valve tags. Issues are
+    never invented: if nothing failed, it says so. There is no job-level notes field
+    in the data model, so per-valve notes are referenced ("See Notes column") rather
+    than copied here.
+    """
+    records = list(records)
+    total = len(records)
+    if total == 0:
+        return "No valves checked."
+    passed = sum(1 for r in records if (getattr(r, "pass_fail", "") or "") == "Pass")
+    failed = [r for r in records if (getattr(r, "pass_fail", "") or "") == "Fail"]
+    nfail = len(failed)
+    if nfail == 0:
+        if passed == total:
+            return "All checked valves passed. No issues noted."
+        return f"{total} valves checked. {passed} passed, 0 failed. No issues noted."
+    tags = [((getattr(r, "valve_tag", "") or "").strip() or "(unnamed valve)") for r in failed]
+    plural_v = "s" if total != 1 else ""
+    plural_i = "s" if nfail != 1 else ""
+    return (
+        f"{total} valve{plural_v} checked. {passed} passed, {nfail} failed. "
+        f"Issue{plural_i} noted on {', '.join(tags)}. See Notes column for details."
+    )
+
+
 def prefill_meta(record, records: Iterable) -> StartupReportMeta:
     """Build a StartupReportMeta pre-filled from a representative checkout record.
 
     Project / Technician / Date / ATS Job # / Description come from `record`;
-    Product Line(s) is derived from all `records`; Site/Building/Floor/Exec Summary
-    are left blank for the operator to fill in the dialog.
+    Product Line(s) and the Executive Summary are generated from all `records`;
+    Site / Building / Floor are left blank for the operator to fill in. All fields
+    remain editable in the dialog before export.
     """
     rec_list = list(records)
+    summary = generate_executive_summary(rec_list)
     if record is None:
-        return StartupReportMeta(product_lines=derive_product_lines(rec_list))
+        return StartupReportMeta(
+            product_lines=derive_product_lines(rec_list),
+            executive_summary=summary,
+        )
     return StartupReportMeta(
         project=getattr(record, "project", "") or "",
         technician=getattr(record, "technician", "") or "",
@@ -145,6 +183,7 @@ def prefill_meta(record, records: Iterable) -> StartupReportMeta:
         ats_job_number=getattr(record, "ats_job_number", "") or "",
         description=getattr(record, "description", "") or "",
         product_lines=derive_product_lines(rec_list),
+        executive_summary=summary,
     )
 
 
@@ -173,6 +212,24 @@ def _num_or_text(value) -> Optional[object]:
         return float(s)
     except ValueError:
         return s
+
+
+def _enable_notes_wrap(ws) -> None:
+    """Force wrap_text on the Notes column (K) data rows, preserving other alignment.
+
+    Only alignment is touched; fonts/fills/borders/number_format are untouched.
+    """
+    for r in range(FIRST_DATA_ROW, LAST_DATA_ROW + 1):
+        cell = ws[f"K{r}"]
+        al = cell.alignment
+        cell.alignment = Alignment(
+            horizontal=al.horizontal,
+            vertical=al.vertical,
+            text_rotation=al.text_rotation,
+            wrap_text=True,
+            shrink_to_fit=al.shrink_to_fit,
+            indent=al.indent,
+        )
 
 
 # ── Public export entry point ───────────────────────────────────────────────────
@@ -205,11 +262,14 @@ def export_startup_report(meta: StartupReportMeta, records, output_path: str) ->
         _set(ws, f"C{r}", map_product_line(getattr(rec, "valve_type", "") or ""))
         _set(ws, f"D{r}", getattr(rec, "model", "") or "")
         _set(ws, f"E{r}", map_valve_type(getattr(rec, "valve_type", "") or ""))
-        # F (Location / Room) — blank for v1
+        _set(ws, f"F{r}", getattr(rec, "location_room", "") or "")
         _set(ws, f"G{r}", map_pass_fail(getattr(rec, "pass_fail", "") or ""))
         _set(ws, f"H{r}", _num_or_text(getattr(rec, "valve_min_sp", "")))
         _set(ws, f"I{r}", _num_or_text(getattr(rec, "valve_max_sp", "")))
         # J (Face Velocity FPM) — blank for v1
         _set(ws, f"K{r}", getattr(rec, "notes", "") or "")
+
+    # Notes column (K) wraps long text on the data rows (preserve other alignment).
+    _enable_notes_wrap(ws)
 
     wb.save(output_path)
