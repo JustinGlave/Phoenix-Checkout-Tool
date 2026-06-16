@@ -48,6 +48,8 @@ class ModelTests(_TempDataFile):
     def test_new_fields_and_room_dataclass(self):
         self.assertEqual(Job().project_manager, "")
         self.assertEqual(Job().building_address, "")
+        self.assertEqual(Job().site_name, "")
+        self.assertEqual(Job().floor, "")
         self.assertEqual(ValveCheckout().room_id, "")
         self.assertEqual(Room(job_id="J", name="Lab 1").job_id, "J")
 

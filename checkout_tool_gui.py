@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Optional
 
@@ -966,26 +967,23 @@ class BugSuggestionDialog(QDialog):
 
 
 class StartupReportDialog(QDialog):
-    """Collects job-level metadata for the Startup Report export.
+    """Collects the per-export fields for the Startup Report / combined export.
 
-    Project / Technician / Date / ATS Job # / Description are pre-filled from a
-    representative checkout record; Site / Building / Floor / Executive Summary are
-    collected here. Product Line(s) is pre-filled from the job's valve types. Any
-    field may be left blank (acceptable for v1).
+    Project identity (Project Name/Number, Site Name, Building, Floor, Project
+    Manager) is the Job's metadata — sourced from the job and carried through
+    unchanged. This dialog only collects/edits the per-export fields: Technician,
+    Date, Product Line(s), Description, Executive Summary.
     """
 
     def __init__(self, meta: StartupReportMeta, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Export Startup Report")
         self.setModal(True)
-        self.resize(460, 420)
+        self.resize(460, 340)
 
-        self._project    = QLineEdit(meta.project)
-        self._site_name  = QLineEdit(meta.site_name)
-        self._building   = QLineEdit(meta.building)
-        self._floor      = QLineEdit(meta.floor)
+        self._meta = meta   # carries the job-sourced fields through unchanged
+
         self._technician = QLineEdit(meta.technician)
-        self._ats_job    = QLineEdit(meta.ats_job_number)
         self._date       = QLineEdit(meta.date_of_checkout)
         self._product    = QLineEdit(meta.product_lines)
         self._desc       = QLineEdit(meta.description)
@@ -994,15 +992,10 @@ class StartupReportDialog(QDialog):
         self._exec.setMinimumHeight(90)
 
         form = QFormLayout()
-        form.addRow("Project",          self._project)
-        form.addRow("Site Name",        self._site_name)
-        form.addRow("Building",         self._building)
-        form.addRow("Floor",            self._floor)
-        form.addRow("Technician",       self._technician)
-        form.addRow("ATS Job Number",   self._ats_job)
-        form.addRow("Date of Checkout", self._date)
-        form.addRow("Product Line(s)",  self._product)
-        form.addRow("Description",      self._desc)
+        form.addRow("Technician",        self._technician)
+        form.addRow("Date of Checkout",  self._date)
+        form.addRow("Product Line(s)",   self._product)
+        form.addRow("Description",       self._desc)
         form.addRow("Executive Summary", self._exec)
 
         btns = QDialogButtonBox()
@@ -1012,21 +1005,19 @@ class StartupReportDialog(QDialog):
         btns.rejected.connect(self.reject)
 
         lay = QVBoxLayout(self)
-        hint = QLabel("Fields are pre-filled from the selected checkout. "
-                      "Edit as needed; blanks are allowed.")
+        hint = QLabel("Project, Site Name, Building, Floor and Job Number come from "
+                      "the job's details. These fields are pre-filled from the "
+                      "checkout — edit as needed.")
         hint.setWordWrap(True)
         lay.addWidget(hint)
         lay.addLayout(form)
         lay.addWidget(btns)
 
     def metadata(self) -> StartupReportMeta:
-        return StartupReportMeta(
-            project=self._project.text().strip(),
-            site_name=self._site_name.text().strip(),
-            building=self._building.text().strip(),
-            floor=self._floor.text().strip(),
+        # Carry the job-sourced fields through unchanged; override the per-export ones.
+        return replace(
+            self._meta,
             technician=self._technician.text().strip(),
-            ats_job_number=self._ats_job.text().strip(),
             date_of_checkout=self._date.text().strip(),
             product_lines=self._product.text().strip(),
             description=self._desc.text().strip(),
@@ -1528,13 +1519,18 @@ class MainWindow(QMainWindow):
         self._jp_project_name     = QLineEdit()
         self._jp_project_manager  = QLineEdit()
         self._jp_building_address = QLineEdit()
+        self._jp_site_name        = QLineEdit()
+        self._jp_floor            = QLineEdit()
         for w in (self._jp_project_number, self._jp_project_name,
-                  self._jp_project_manager, self._jp_building_address):
+                  self._jp_project_manager, self._jp_building_address,
+                  self._jp_site_name, self._jp_floor):
             w.editingFinished.connect(self._save_job_details)
         det_lay.addRow("Project Number",   self._jp_project_number)
         det_lay.addRow("Project Name",     self._jp_project_name)
         det_lay.addRow("Project Manager",  self._jp_project_manager)
         det_lay.addRow("Building Address", self._jp_building_address)
+        det_lay.addRow("Site Name",        self._jp_site_name)
+        det_lay.addRow("Floor",            self._jp_floor)
         outer_lay.addWidget(details)
 
         scroll = QScrollArea()
@@ -1563,6 +1559,8 @@ class MainWindow(QMainWindow):
         self._jp_project_name.setText(job.job_name)
         self._jp_project_manager.setText(job.project_manager)
         self._jp_building_address.setText(job.building_address)
+        self._jp_site_name.setText(job.site_name)
+        self._jp_floor.setText(job.floor)
 
         records = self._store.records_for_job(job_id)
         total    = len(records)
@@ -1605,6 +1603,8 @@ class MainWindow(QMainWindow):
         job.job_name         = self._jp_project_name.text().strip()
         job.project_manager  = self._jp_project_manager.text().strip()
         job.building_address = self._jp_building_address.text().strip()
+        job.site_name        = self._jp_site_name.text().strip()
+        job.floor            = self._jp_floor.text().strip()
         self._store.update_job(job)
         self._job_hdr_title.setText(_job_label(job))
 
@@ -3069,6 +3069,15 @@ class MainWindow(QMainWindow):
             return
         self._export_job(job_id)
 
+    def _room_names_for(self, records) -> dict:
+        """Map record.id -> its room's name (Startup Report column F)."""
+        names = {}
+        for r in records:
+            rid = getattr(r, "room_id", "")
+            room = self._store.get_room(rid) if rid else None
+            names[r.id] = room.name if room else ""
+        return names
+
     def _on_export_startup_report(self) -> None:
         job_id = self._selected_job_id()
         if not job_id:
@@ -3105,7 +3114,7 @@ class MainWindow(QMainWindow):
         if prefill_record is None:
             prefill_record = records[0]
 
-        dlg = StartupReportDialog(prefill_meta(prefill_record, records), self)
+        dlg = StartupReportDialog(prefill_meta(prefill_record, records, job), self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         meta = dlg.metadata()
@@ -3121,7 +3130,7 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            export_startup_report(meta, records, path)
+            export_startup_report(meta, records, path, self._room_names_for(records))
             QMessageBox.information(
                 self, "Export Complete",
                 f"Startup Report with {len(records)} valve"
@@ -3169,7 +3178,7 @@ class MainWindow(QMainWindow):
         if prefill_record is None:
             prefill_record = records[0]
 
-        dlg = StartupReportDialog(prefill_meta(prefill_record, records), self)
+        dlg = StartupReportDialog(prefill_meta(prefill_record, records, job), self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         meta = dlg.metadata()
@@ -3184,7 +3193,7 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            export_combined_report(meta, records, path)
+            export_combined_report(meta, records, path, self._room_names_for(records))
             QMessageBox.information(
                 self, "Export Complete",
                 f"Startup & Checkout Report ({len(records)} valve"

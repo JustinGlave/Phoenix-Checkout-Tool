@@ -48,6 +48,8 @@ class Job:
     job_name:         str  = ""    # Project Name
     project_manager:  str  = ""
     building_address: str  = ""
+    site_name:        str  = ""
+    floor:            str  = ""
     archived:         bool = False
 
 

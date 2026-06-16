@@ -446,5 +446,52 @@ class CombinedExportTests(unittest.TestCase):
                                    os.path.join(tempfile.mkdtemp(), "x.xlsx"))
 
 
+class JobSourcedMetadataTests(unittest.TestCase):
+    """Phase 3: project identity is sourced from the Job; column F from the room."""
+
+    def _job(self):
+        from checkout_tool_backend import Job
+        return Job(job_number="P-100", job_name="Acme Project", project_manager="Jane PM",
+                   building_address="123 Main St", site_name="Main Campus", floor="3")
+
+    def test_prefill_sources_identity_from_job(self):
+        job = self._job()
+        rec = make_record(valve_tag="V1", technician="Tech A", date="2026-06-16", description="d")
+        meta = prefill_meta(rec, [rec], job)
+        self.assertEqual(meta.project, "Acme Project")
+        self.assertEqual(meta.ats_job_number, "P-100")
+        self.assertEqual(meta.site_name, "Main Campus")
+        self.assertEqual(meta.building, "123 Main St")
+        self.assertEqual(meta.floor, "3")
+        self.assertEqual(meta.project_manager, "Jane PM")
+        self.assertEqual(meta.technician, "Tech A")   # per-export, from the record
+
+    def test_export_writes_job_sourced_cells(self):
+        job = self._job()
+        rec = make_record(valve_tag="V1")
+        wb, ws, _ = export_to_temp(prefill_meta(rec, [rec], job), [rec])
+        self.assertEqual(ws["C3"].value, "Acme Project")  # Project   <- job_name
+        self.assertEqual(ws["C4"].value, "Main Campus")   # Site Name <- job.site_name
+        self.assertEqual(ws["C5"].value, "123 Main St")   # Building  <- building_address
+        self.assertEqual(ws["C6"].value, "3")             # Floor     <- job.floor
+        self.assertEqual(ws["C8"].value, "P-100")         # ATS Job # <- job_number
+
+    def test_column_f_from_room_names(self):
+        rec = make_record(valve_tag="V1")
+        rec.id = "rid-1"
+        out = os.path.join(tempfile.mkdtemp(prefix="sr_f_"), "o.xlsx")
+        export_startup_report(StartupReportMeta(), [rec], out, {"rid-1": "Lab 5"})
+        ws = openpyxl.load_workbook(out)["Startup Report"]
+        self.assertEqual(ws["F15"].value, "Lab 5")
+
+    def test_combined_column_f_from_room_names(self):
+        from checkout_tool_backend import ValveCheckout
+        rec = ValveCheckout(id="cid-1", valve_tag="V1", valve_type="Fume Hood", pass_fail="Pass")
+        out = os.path.join(tempfile.mkdtemp(prefix="sr_cf_"), "o.xlsx")
+        export_combined_report(StartupReportMeta(), [rec], out, {"cid-1": "Room A"})
+        ws = openpyxl.load_workbook(out)["Startup Report"]
+        self.assertEqual(ws["F15"].value, "Room A")
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
