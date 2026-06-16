@@ -8,6 +8,43 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [1.8.0] — 2026-06-16
+
+Startup Report export, a single combined report, and a Job → Room → Valve
+restructure.
+
+### Added
+- **Startup Report export** — generate the Phoenix Startup Report workbook from a
+  job's checkouts (Cover + Startup Report tabs). The template is embedded in source
+  so it ships through the exe-only auto-updater. Pass/Fail, product line, and valve
+  type are mapped per the integration spec; the Notes column wraps and its rows
+  auto-fit; a factual Executive Summary (totals + failed valves) is generated and
+  editable before export.
+- **Export Startup & Checkout Report** — one combined workbook: Cover + Startup
+  Report + one sheet per checkout, named
+  `{Project Number}_{Project Name}_Startup and Checkout Report.xlsx`. The separate
+  Startup Report and per-checkout exports remain.
+- **Rooms** — checkouts are organized Job → Room → Valve. Right-click a job to add
+  rooms; right-click a room to add / batch-add valves, rename, or delete it. A room
+  view lists the room's valves in a table sortable by tag / type / pass-fail / model.
+- **Job detail view** — Project Number, Project Name, Project Manager, Building
+  Address, Site Name, and Floor are now job-level metadata (the sole source) and
+  flow into the Startup Report.
+
+### Changed
+- Existing checkout data is auto-migrated to the Room model on first launch (a
+  one-time `data.json.pre-rooms.bak` backup is written); valves without a room are
+  placed in an "Unassigned" room seeded from their prior location.
+- The Startup Report export dialog no longer re-asks for project identity (Project,
+  Site Name, Building, Floor, Job Number) — those are sourced from the job; column F
+  shows the valve's room name. The per-valve "Location / Room" editor field was
+  retired.
+
+### Known
+- The GitHub-releases auto-update remains **unsigned** (Ed25519 signing is tracked
+  as a follow-up). Project Manager is captured at the job level but not yet rendered
+  on the report (Cover-cell follow-up).
+
 ## [1.7.1] — 2026-05-30
 
 Release hardening + openpyxl dependency declaration — no functional changes.
