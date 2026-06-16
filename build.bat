@@ -119,17 +119,17 @@ if errorlevel 1 (
 echo [2/3] Installer created: dist\%APP_NAME%Setup.exe
 echo.
 
-:: ── Step 3: Create zips ──────────────────────────────────────
+:: ── Step 3: Create zip ───────────────────────────────────────
 :zips
-echo [3/3] Creating zip archives...
+echo [3/3] Creating zip archive...
 
-:: Zip 1 - exe only for auto-updater
-powershell -Command "Compress-Archive -Path 'dist\%APP_NAME%\%APP_NAME%.exe' -DestinationPath 'dist\%APP_NAME%.zip' -Force"
-echo   Created: dist\%APP_NAME%.zip  (auto-updater)
-
-:: Zip 2 - full folder for manual fresh installs
+:: Full-bundle zip — used by BOTH the auto-updater (full-folder swap, v1.8.0+)
+:: and manual fresh installs. The old exe-only auto-updater zip is intentionally
+:: NOT produced anymore: an exe-only update leaves the deployed _internal in place
+:: and bricks ("Failed to start embedded python interpreter") whenever the build
+:: toolchain (PyInstaller / Python patch) differs from the deployed runtime.
 powershell -Command "Compress-Archive -Path 'dist\%APP_NAME%' -DestinationPath 'dist\%APP_NAME%_FullInstall.zip' -Force"
-echo   Created: dist\%APP_NAME%_FullInstall.zip  (manual install)
+echo   Created: dist\%APP_NAME%_FullInstall.zip  (auto-updater + manual install)
 
 echo.
 echo ============================================================
@@ -137,12 +137,11 @@ echo  Build complete — v%VERSION%
 echo ============================================================
 echo.
 echo  dist\%APP_NAME%\%APP_NAME%.exe        ^<-- test this first
-echo  dist\%APP_NAME%Setup.exe              ^<-- installer
-echo  dist\%APP_NAME%.zip                   ^<-- auto-updater zip
-echo  dist\%APP_NAME%_FullInstall.zip       ^<-- manual install zip
+echo  dist\%APP_NAME%Setup.exe              ^<-- installer (new users)
+echo  dist\%APP_NAME%_FullInstall.zip       ^<-- auto-updater (full-bundle) + manual install
 echo.
 echo  Upload to GitHub Release:
-echo    - %APP_NAME%.zip             (required for auto-updater)
-echo    - %APP_NAME%Setup.exe        (recommended for new users)
+echo    - %APP_NAME%_FullInstall.zip  (REQUIRED for auto-updater — full-bundle swap)
+echo    - %APP_NAME%Setup.exe         (recommended for new users)
 echo.
 pause

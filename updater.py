@@ -31,16 +31,22 @@ Phase 3B retrofit notes
   download_update + apply_update) is kept local to maintain the existing
   module's complete public surface. The GUI does NOT call this wrapper;
   it uses the split API directly.
-- Phoenix Checkout's updater payload contract is **exe-only**
-  (``expected_internal=False`` semantics per ADR-003). This is preserved
-  exactly — Checkout's apply_update extracts only ``EXE_NAME`` from the
-  zip via PowerShell, never references ``_internal/``.
+- Updater payload contract (CHANGED in v1.8.0): **full-bundle**. apply_update
+  now downloads the FULL build zip (the whole onedir folder: exe + _internal)
+  and swaps the entire install folder, replacing the prior exe-only contract.
+  Rationale: an exe-only update leaves the deployed _internal in place, so a
+  build-toolchain change (PyInstaller / Python patch) produces a new bootloader
+  exe that can't start against the stale runtime ("Failed to start embedded
+  python interpreter"). Swapping the whole folder makes updates robust to
+  toolchain drift. (Supersedes the ADR-003 exe-only / expected_internal=False
+  note in the comments below.)
 
 Configuration
 -------------
 Set GITHUB_OWNER and GITHUB_REPO to match your GitHub account and repository.
-Set ZIP_ASSET_NAME to match the zip file uploaded to your GitHub release
-(this is the auto-updater zip produced by build.bat, not the full install zip).
+Set ZIP_ASSET_NAME to the FULL-INSTALL zip uploaded to the GitHub release
+(produced by build.bat as PhoenixCheckoutTool_FullInstall.zip), and
+BUNDLE_DIR_NAME to the top-level folder inside it.
 """
 
 from __future__ import annotations
@@ -67,8 +73,16 @@ logger = logging.getLogger(__name__)
 # ── CHANGE THESE ──────────────────────────────────────────────────────────────
 GITHUB_OWNER   = "JustinGlave"
 GITHUB_REPO    = "Phoenix-Checkout-Tool"
-ZIP_ASSET_NAME = "PhoenixCheckoutTool.zip"
-EXE_NAME       = "PhoenixCheckoutTool.exe"
+# Full-bundle auto-update (v1.8.0+): the updater downloads the FULL build zip
+# (the whole onedir folder: exe + _internal) and swaps the entire install folder,
+# so a build-toolchain change can never leave a new bootloader exe on a stale
+# _internal runtime (the failure mode exe-only updates were prone to).
+#   ZIP_ASSET_NAME  — the full-install zip asset attached to the GitHub release.
+#   BUNDLE_DIR_NAME — the top-level folder inside that zip (Compress-Archive of
+#                     dist\PhoenixCheckoutTool puts everything under this folder).
+ZIP_ASSET_NAME  = "PhoenixCheckoutTool_FullInstall.zip"
+BUNDLE_DIR_NAME = "PhoenixCheckoutTool"
+EXE_NAME        = "PhoenixCheckoutTool.exe"
 # ──────────────────────────────────────────────────────────────────────────────
 
 
@@ -112,7 +126,7 @@ def download_update(info: UpdateInfo, tmp_zip: Path,
             info.download_url,
             headers={"User-Agent": EXE_NAME},
         )
-        with urllib.request.urlopen(req, timeout=60) as resp:
+        with urllib.request.urlopen(req, timeout=120) as resp:
             total = int(resp.headers.get("Content-Length", 0))
             done  = 0
             chunk = 64 * 1024
@@ -137,18 +151,59 @@ def download_update(info: UpdateInfo, tmp_zip: Path,
         raise RuntimeError(f"Download failed: {exc}") from exc
 
 
+def _apply_bat_content(exe_str: str, inst_str: str, zip_str: str, pid: int) -> str:
+    """Build the updater batch script (full-bundle swap). Extracted for testing.
+
+    The script: waits for the running process (``pid``) to exit; extracts the
+    full-build zip; renames the old install folder aside; moves the new bundle
+    into place (a same-volume rename — effectively atomic); verifies the new exe
+    exists and rolls back to the old folder if not; relaunches; cleans up. Swapping
+    exe + _internal together avoids the stale-runtime brick of exe-only updates.
+    """
+    zip_ps = zip_str.replace("'", "''")
+    return f"""@echo off
+:wait
+tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul
+if not errorlevel 1 (
+    timeout /t 1 /nobreak >nul
+    goto wait
+)
+set "PKG=%TEMP%\\pct_update_{pid}"
+if exist "%PKG%" rmdir /s /q "%PKG%"
+powershell -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory('{zip_ps}', '%PKG%')"
+if not exist "%PKG%\\{BUNDLE_DIR_NAME}\\{EXE_NAME}" goto relaunch
+if exist "{inst_str}.bak-{pid}" rmdir /s /q "{inst_str}.bak-{pid}"
+move "{inst_str}" "{inst_str}.bak-{pid}" >nul
+move "%PKG%\\{BUNDLE_DIR_NAME}" "{inst_str}" >nul
+if exist "{inst_str}\\{EXE_NAME}" goto ok
+if exist "{inst_str}" rmdir /s /q "{inst_str}"
+move "{inst_str}.bak-{pid}" "{inst_str}" >nul
+goto relaunch
+:ok
+rmdir /s /q "{inst_str}.bak-{pid}" >nul 2>nul
+:relaunch
+if exist "%PKG%" rmdir /s /q "%PKG%" >nul 2>nul
+del "{zip_str}" >nul 2>nul
+start "" "{exe_str}"
+del "%~f0"
+"""
+
+
 def apply_update(info: UpdateInfo, tmp_zip: Path) -> None:
     """
-    Extract the downloaded zip over the current exe via a batch script, then exit.
+    Replace the entire install folder (exe + _internal) with the downloaded
+    full-build bundle via a batch script, then exit.
 
-    Must be called from the compiled exe (sys.frozen). Never returns normally —
-    it launches the batch and calls sys.exit(0).
-    Raises RuntimeError if the environment is wrong.
+    Full-bundle update (v1.8.0+): the downloaded zip is the complete onedir build
+    (``BUNDLE_DIR_NAME``/ holding the exe + _internal). The batch waits for this
+    process to exit, extracts the bundle, renames the old install folder aside,
+    moves the new bundle into place (a same-volume rename, effectively atomic),
+    verifies the new exe and rolls back on failure, relaunches, and deletes the old
+    copy. Swapping exe + _internal together means a build-toolchain change can never
+    leave a new bootloader on a stale runtime.
 
-    Phase 3B note: kept LOCAL. Implements Checkout's exe-only updater
-    payload contract — extracts ``EXE_NAME`` from the zip and copies over
-    the existing install's exe. Does NOT touch ``_internal/``
-    (``expected_internal=False`` per ADR-003).
+    Must be called from the compiled exe (sys.frozen). Never returns normally — it
+    launches the batch and calls sys.exit(0). Raises RuntimeError if run from source.
     """
     if not getattr(sys, "frozen", False):
         raise RuntimeError(
@@ -156,32 +211,15 @@ def apply_update(info: UpdateInfo, tmp_zip: Path) -> None:
             "You're running from source — pull the latest code from GitHub instead."
         )
 
-    current_exe = Path(sys.executable).resolve()
-    exe_str = str(current_exe)
-    zip_str = str(tmp_zip)
+    exe      = Path(sys.executable).resolve()
+    exe_str  = str(exe)
+    inst_str = str(exe.parent)   # the install folder (exe + _internal live here)
+    zip_str  = str(tmp_zip)
 
-    # Escape single quotes for embedding in PowerShell single-quoted string literals.
-    exe_ps = exe_str.replace("'", "''")
-    zip_ps = zip_str.replace("'", "''")
-
-    pid = os.getpid()
     bat_fd, bat_path_str = tempfile.mkstemp(suffix=".bat")
     os.close(bat_fd)
-
-    bat_content = f"""@echo off
-:wait
-tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul
-if not errorlevel 1 (
-    timeout /t 1 /nobreak >nul
-    goto wait
-)
-powershell -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; $tmp = Join-Path $env:TEMP ([System.IO.Path]::GetRandomFileName()); [System.IO.Compression.ZipFile]::ExtractToDirectory('{zip_ps}', $tmp); Copy-Item -Path (Join-Path $tmp '{EXE_NAME}') -Destination '{exe_ps}' -Force; Remove-Item -Path $tmp -Recurse -Force"
-del "{zip_str}"
-start "" "{exe_str}"
-del "%~f0"
-"""
     with open(bat_path_str, "w") as fh:
-        fh.write(bat_content)
+        fh.write(_apply_bat_content(exe_str, inst_str, zip_str, os.getpid()))
 
     subprocess.Popen(
         ["cmd.exe", "/c", bat_path_str],
