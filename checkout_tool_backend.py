@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import uuid
 from dataclasses import dataclass, field, asdict
 from typing import Optional
@@ -36,11 +37,28 @@ DATA_FILE = _app_data_path("data.json")
 
 @dataclass
 class Job:
-    """A job / project container that holds one or more valve checkout records."""
-    id:         str  = field(default_factory=lambda: str(uuid.uuid4()))
-    job_number: str  = ""
-    job_name:   str  = ""
-    archived:   bool = False
+    """A job / project container — the sole source of project-level metadata.
+
+    job_number / job_name double as Project Number / Project Name (reused, not
+    duplicated). project_manager and building_address were added for the project
+    metadata block (Startup Report Cover sheet).
+    """
+    id:               str  = field(default_factory=lambda: str(uuid.uuid4()))
+    job_number:       str  = ""    # Project Number
+    job_name:         str  = ""    # Project Name
+    project_manager:  str  = ""
+    building_address: str  = ""
+    archived:         bool = False
+
+
+# ── Room ─────────────────────────────────────────────────────────────────────
+
+@dataclass
+class Room:
+    """A room within a job; groups the valve checkouts performed in that room."""
+    id:     str = field(default_factory=lambda: str(uuid.uuid4()))
+    job_id: str = ""   # parent Job.id
+    name:   str = ""
 
 
 # ── Checkout record ────────────────────────────────────────────────────────────
@@ -48,8 +66,9 @@ class Job:
 @dataclass
 class ValveCheckout:
     """One complete valve checkout record, mirroring the Phoenix Celeris checkout sheet."""
-    id:     str = field(default_factory=lambda: str(uuid.uuid4()))
-    job_id: str = ""   # parent Job.id
+    id:      str = field(default_factory=lambda: str(uuid.uuid4()))
+    job_id:  str = ""   # parent Job.id
+    room_id: str = ""   # parent Room.id (3-level model)
 
     # ── Header fields ──────────────────────────────────────────────────────────
     valve_tag:      str = ""
@@ -58,7 +77,8 @@ class ValveCheckout:
     date:           str = ""   # ISO yyyy-MM-dd
     technician:     str = ""
     description:    str = ""
-    location_room:  str = ""   # optional per-valve location (Startup Report col F)
+    location_room:  str = ""   # RETIRED: superseded by the valve's Room; kept so legacy
+                               # data loads and seeds room names during migration
     model:          str = "CELERIS 2"
     valve_type:     str = "Fume Hood"
     pass_fail:      str = ""   # "Pass" | "Fail" | ""
@@ -93,12 +113,13 @@ class CheckoutStore:
 
     def __init__(self) -> None:
         self._jobs:    list[Job]           = []
+        self._rooms:   list[Room]          = []
         self._records: list[ValveCheckout] = []
         self._load()
 
     # ── Persistence ────────────────────────────────────────────────────────────
 
-    _DATA_VERSION = 1
+    _DATA_VERSION = 2   # v2 introduced the Room level (Job -> Room -> ValveCheckout)
 
     def _load(self) -> None:
         if not os.path.exists(DATA_FILE):
@@ -116,6 +137,13 @@ class CheckoutStore:
             except Exception:
                 pass  # skip individual bad records, preserve the rest
 
+        rooms: list[Room] = []
+        for rm in raw.get("rooms", []):
+            try:
+                rooms.append(Room(**{k: v for k, v in rm.items() if k in Room.__dataclass_fields__}))
+            except Exception:
+                pass
+
         records: list[ValveCheckout] = []
         for r in raw.get("records", []):
             try:
@@ -125,7 +153,16 @@ class CheckoutStore:
                 pass
 
         self._jobs    = jobs
+        self._rooms   = rooms
         self._records = records
+
+        # One-time, idempotent migration to the Room model: assign a Room to any
+        # checkout that lacks one (legacy 2-level data). Room names are seeded from
+        # the retired location_room field, defaulting to "Unassigned". The original
+        # file is backed up once before the migrated structure is written.
+        if self._migrate_orphans_to_rooms():
+            self._backup_once(DATA_FILE + ".pre-rooms.bak")
+            self._save()
 
     def _save(self) -> None:
         tmp = DATA_FILE + ".tmp"
@@ -134,12 +171,52 @@ class CheckoutStore:
                 {
                     "version": self._DATA_VERSION,
                     "jobs":    [asdict(j) for j in self._jobs],
+                    "rooms":   [asdict(rm) for rm in self._rooms],
                     "records": [asdict(r) for r in self._records],
                 },
                 fh,
                 indent=2,
             )
         os.replace(tmp, DATA_FILE)  # atomic — avoids corruption on crash
+
+    # ── Migration (legacy 2-level -> 3-level Room model) ─────────────────────────
+
+    @staticmethod
+    def _norm(name: str) -> str:
+        return (name or "").strip().casefold()
+
+    def _find_or_create_room(self, job_id: str, name: str) -> Room:
+        """Return an existing room (matched case-insensitively by name within the
+        job) or create one. Avoids duplicate-room fragmentation from dirty text."""
+        key = self._norm(name)
+        for rm in self._rooms:
+            if rm.job_id == job_id and self._norm(rm.name) == key:
+                return rm
+        room = Room(job_id=job_id, name=(name or "").strip() or "Unassigned")
+        self._rooms.append(room)
+        return room
+
+    def _migrate_orphans_to_rooms(self) -> bool:
+        """Assign a room_id to any checkout that lacks one. Idempotent — records
+        that already have a room_id are untouched. Returns True if anything changed."""
+        changed = False
+        for rec in self._records:
+            if rec.room_id:
+                continue
+            name = (rec.location_room or "").strip() or "Unassigned"
+            rec.room_id = self._find_or_create_room(rec.job_id, name).id
+            changed = True
+        return changed
+
+    @staticmethod
+    def _backup_once(path: str) -> None:
+        """Copy the current data file to `path` once (never overwrite an existing
+        backup), preserving the original pre-migration state."""
+        try:
+            if os.path.exists(DATA_FILE) and not os.path.exists(path):
+                shutil.copy2(DATA_FILE, path)
+        except OSError:
+            pass
 
     # ── Job API ────────────────────────────────────────────────────────────────
 
@@ -186,10 +263,43 @@ class CheckoutStore:
             self._save()
 
     def delete_job(self, job_id: str) -> None:
-        """Delete a job and all its checkout records."""
-        self._jobs    = [j for j in self._jobs    if j.id     != job_id]
-        self._records = [r for r in self._records if r.job_id != job_id]
+        """Delete a job and all its rooms and checkout records."""
+        self._jobs    = [j  for j  in self._jobs    if j.id      != job_id]
+        self._rooms   = [rm for rm in self._rooms   if rm.job_id != job_id]
+        self._records = [r  for r  in self._records if r.job_id  != job_id]
         self._save()
+
+    # ── Room API ─────────────────────────────────────────────────────────────────
+
+    def rooms_for_job(self, job_id: str) -> list[Room]:
+        """Rooms in a job, sorted by name."""
+        return sorted([rm for rm in self._rooms if rm.job_id == job_id],
+                      key=lambda rm: rm.name.lower())
+
+    def get_room(self, room_id: str) -> Optional[Room]:
+        return next((rm for rm in self._rooms if rm.id == room_id), None)
+
+    def add_room(self, room: Room) -> None:
+        self._rooms.append(room)
+        self._save()
+
+    def update_room(self, room: Room) -> None:
+        for idx, existing in enumerate(self._rooms):
+            if existing.id == room.id:
+                self._rooms[idx] = room
+                self._save()
+                return
+
+    def delete_room(self, room_id: str) -> None:
+        """Delete a room and all its checkout records (cascade)."""
+        self._rooms   = [rm for rm in self._rooms   if rm.id      != room_id]
+        self._records = [r  for r  in self._records if r.room_id  != room_id]
+        self._save()
+
+    def records_for_room(self, room_id: str) -> list[ValveCheckout]:
+        """All checkouts in a room, sorted alphabetically by valve_tag."""
+        recs = [r for r in self._records if r.room_id == room_id]
+        return sorted(recs, key=lambda r: r.valve_tag.lower())
 
     # ── Record API ─────────────────────────────────────────────────────────────
 
