@@ -19,10 +19,12 @@ metadata dialog and menu wiring live in checkout_tool_gui.py.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
 import openpyxl
+from openpyxl.styles import Alignment
 
 from startup_report_template import template_stream
 
@@ -46,8 +48,12 @@ META_CELLS = {
     "executive_summary": "G4",
 }
 
-# Valve row columns B..K (column A is auto-numbered; L..AE stay blank for v1).
-# F (Location / Room) and J (Face Velocity FPM) are intentionally blank for v1.
+# Valve row columns B..K (column A is auto-numbered). The hidden detailed-reading
+# columns L..AE are never written by the app (they stay blank) — including the
+# operator-flagged Mag Diff Pressure, Primary Air from AHU, Htg/Clg Offset, Exhaust
+# Damper Pos., Verify Schedule, Air Differential, and Linkage Cotter Pins.
+# F (Location / Room) is written from record.location_room; J (Face Velocity FPM)
+# is intentionally blank for v1.
 
 # ── Mapping tables (approved) ───────────────────────────────────────────────────
 _CSCP_TYPES = {"CSCP Fume Hood", "PBC Room"}
@@ -80,7 +86,12 @@ class TooManyValvesError(Exception):
 
 @dataclass
 class StartupReportMeta:
-    """Job-level metadata for the Startup Report header block."""
+    """Metadata for the Startup Report header / Cover.
+
+    Project identity (project, ats_job_number, site_name, building, floor,
+    project_manager, building_address) is sourced from the Job; technician, date,
+    product_lines, description, executive_summary are per-export.
+    """
     project:           str = ""
     site_name:         str = ""
     building:          str = ""
@@ -91,6 +102,8 @@ class StartupReportMeta:
     product_lines:     str = ""
     description:       str = ""
     executive_summary: str = ""
+    project_manager:   str = ""   # job-level; no template cell yet (Cover follow-up)
+    building_address:  str = ""   # job-level; maps to the Building cell (C5)
 
 
 # ── Mapping helpers ─────────────────────────────────────────────────────────────
@@ -128,24 +141,61 @@ def derive_product_lines(records: Iterable) -> str:
     return ""
 
 
-def prefill_meta(record, records: Iterable) -> StartupReportMeta:
-    """Build a StartupReportMeta pre-filled from a representative checkout record.
+def generate_executive_summary(records: Iterable) -> str:
+    """Generate a factual executive summary for cell G4 (editable before export).
 
-    Project / Technician / Date / ATS Job # / Description come from `record`;
-    Product Line(s) is derived from all `records`; Site/Building/Floor/Exec Summary
-    are left blank for the operator to fill in the dialog.
+    Reports total / pass / fail counts and lists the failed valve tags. Issues are
+    never invented: if nothing failed, it says so. There is no job-level notes field
+    in the data model, so per-valve notes are referenced ("See Notes column") rather
+    than copied here.
+    """
+    records = list(records)
+    total = len(records)
+    if total == 0:
+        return "No valves checked."
+    passed = sum(1 for r in records if (getattr(r, "pass_fail", "") or "") == "Pass")
+    failed = [r for r in records if (getattr(r, "pass_fail", "") or "") == "Fail"]
+    nfail = len(failed)
+    if nfail == 0:
+        if passed == total:
+            return "All checked valves passed. No issues noted."
+        return f"{total} valves checked. {passed} passed, 0 failed. No issues noted."
+    tags = [((getattr(r, "valve_tag", "") or "").strip() or "(unnamed valve)") for r in failed]
+    plural_v = "s" if total != 1 else ""
+    plural_i = "s" if nfail != 1 else ""
+    return (
+        f"{total} valve{plural_v} checked. {passed} passed, {nfail} failed. "
+        f"Issue{plural_i} noted on {', '.join(tags)}. See Notes column for details."
+    )
+
+
+def prefill_meta(record, records: Iterable, job=None) -> StartupReportMeta:
+    """Build a StartupReportMeta.
+
+    Project identity is sourced from `job` (the sole source): Project Name, Project
+    Number (-> ATS Job #), Site Name, Building Address (-> Building), Floor, Project
+    Manager. Technician / Date / Description are pre-filled from a representative
+    `record`; Product Line(s) and the Executive Summary are generated from all
+    `records`. The per-export fields remain editable in the dialog.
     """
     rec_list = list(records)
-    if record is None:
-        return StartupReportMeta(product_lines=derive_product_lines(rec_list))
-    return StartupReportMeta(
-        project=getattr(record, "project", "") or "",
-        technician=getattr(record, "technician", "") or "",
-        date_of_checkout=getattr(record, "date", "") or "",
-        ats_job_number=getattr(record, "ats_job_number", "") or "",
-        description=getattr(record, "description", "") or "",
+    meta = StartupReportMeta(
         product_lines=derive_product_lines(rec_list),
+        executive_summary=generate_executive_summary(rec_list),
     )
+    if job is not None:
+        meta.project          = getattr(job, "job_name", "") or ""
+        meta.ats_job_number   = getattr(job, "job_number", "") or ""
+        meta.site_name        = getattr(job, "site_name", "") or ""
+        meta.building         = getattr(job, "building_address", "") or ""
+        meta.building_address = getattr(job, "building_address", "") or ""
+        meta.floor            = getattr(job, "floor", "") or ""
+        meta.project_manager  = getattr(job, "project_manager", "") or ""
+    if record is not None:
+        meta.technician       = getattr(record, "technician", "") or ""
+        meta.date_of_checkout = getattr(record, "date", "") or ""
+        meta.description      = getattr(record, "description", "") or ""
+    return meta
 
 
 # ── Cell-write helpers ──────────────────────────────────────────────────────────
@@ -175,15 +225,39 @@ def _num_or_text(value) -> Optional[object]:
         return s
 
 
+def _format_notes_rows(ws) -> None:
+    """Wrap the Notes column (K) and let the data rows auto-fit their height.
+
+    Sets wrap_text on K15:K54 (preserving each cell's other alignment), and clears
+    the template's fixed custom row height on rows 15-54 so Excel auto-fits the
+    wrapped Notes text instead of clipping it. Only alignment + row height change;
+    fonts/fills/borders/number_format are untouched.
+    """
+    for r in range(FIRST_DATA_ROW, LAST_DATA_ROW + 1):
+        cell = ws[f"K{r}"]
+        al = cell.alignment
+        cell.alignment = Alignment(
+            horizontal=al.horizontal,
+            vertical=al.vertical,
+            text_rotation=al.text_rotation,
+            wrap_text=True,
+            shrink_to_fit=al.shrink_to_fit,
+            indent=al.indent,
+        )
+        # Drop the template's fixed 15pt custom height so Excel auto-fits the wrapped
+        # Notes row. (customHeight is a derived read-only property: clearing height
+        # makes it False, which tells Excel to auto-size the row.)
+        ws.row_dimensions[r].height = None
+
+
 # ── Public export entry point ───────────────────────────────────────────────────
 
-def export_startup_report(meta: StartupReportMeta, records, output_path: str) -> None:
-    """
-    Populate the embedded Startup Report template with job metadata + valve rows
-    and save to output_path (.xlsx).
+def _build_startup_workbook(meta: StartupReportMeta, records, room_names=None):
+    """Load the embedded template and fill the Startup Report tab (no save).
 
-    Raises TooManyValvesError if records exceeds the v1 cap (MAX_VALVES). Never
-    writes the Cover tab or column A. Writes plain values only.
+    Returns the openpyxl Workbook (Cover + Startup Report tabs). Raises
+    TooManyValvesError if records exceeds the v1 cap. Never writes the Cover tab or
+    column A; writes plain values only.
     """
     records = list(records)
     if len(records) > MAX_VALVES:
@@ -205,11 +279,68 @@ def export_startup_report(meta: StartupReportMeta, records, output_path: str) ->
         _set(ws, f"C{r}", map_product_line(getattr(rec, "valve_type", "") or ""))
         _set(ws, f"D{r}", getattr(rec, "model", "") or "")
         _set(ws, f"E{r}", map_valve_type(getattr(rec, "valve_type", "") or ""))
-        # F (Location / Room) — blank for v1
+        _set(ws, f"F{r}", (room_names or {}).get(getattr(rec, "id", ""), "")
+                          or (getattr(rec, "location_room", "") or ""))
         _set(ws, f"G{r}", map_pass_fail(getattr(rec, "pass_fail", "") or ""))
         _set(ws, f"H{r}", _num_or_text(getattr(rec, "valve_min_sp", "")))
         _set(ws, f"I{r}", _num_or_text(getattr(rec, "valve_max_sp", "")))
         # J (Face Velocity FPM) — blank for v1
         _set(ws, f"K{r}", getattr(rec, "notes", "") or "")
 
+    # Notes column (K) wraps long text and the data rows auto-fit their height.
+    _format_notes_rows(ws)
+    return wb
+
+
+def export_startup_report(meta: StartupReportMeta, records, output_path: str,
+                          room_names=None) -> None:
+    """
+    Populate the embedded Startup Report template with job metadata + valve rows
+    and save to output_path (.xlsx). room_names maps record.id -> room name for
+    column F (Location / Room).
+
+    Raises TooManyValvesError if records exceeds the v1 cap (MAX_VALVES). Never
+    writes the Cover tab or column A. Writes plain values only.
+    """
+    _build_startup_workbook(meta, records, room_names).save(output_path)
+
+
+def _append_checkout_sheets(wb, records) -> None:
+    """Append one filled per-valve checkout sheet per record into wb.
+
+    Reuses the existing checkout export engine (checkout_export) by composition —
+    it is not modified. Imported lazily so this module stays light unless the
+    combined export is used.
+    """
+    from checkout_export import (
+        _fill_one, _copy_ws_into, _resource_path, _VALVE_TYPE_TEMPLATE, TEMPLATE_NAME,
+    )
+    for rec in records:
+        name = _VALVE_TYPE_TEMPLATE.get(getattr(rec, "valve_type", "") or "", TEMPLATE_NAME)
+        path = _resource_path(name)
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"Checkout template '{name}' not found.\n"
+                "Please reinstall the application to restore bundled templates."
+            )
+        src_ws = openpyxl.load_workbook(path).active
+        _fill_one(src_ws, rec)          # fills the per-type checkout sheet
+        _copy_ws_into(src_ws, wb)       # transplants it into the combined workbook
+
+
+def export_combined_report(meta: StartupReportMeta, records, output_path: str,
+                           room_names=None) -> None:
+    """
+    Export ONE workbook combining the Startup Report and the per-valve checkout
+    sheets: Cover + Startup Report + one sheet per checkout record, saved to
+    output_path (.xlsx). room_names maps record.id -> room name for column F.
+
+    Raises TooManyValvesError if records exceeds the v1 cap (the Startup Report tab
+    is limited to MAX_VALVES rows). The Startup Report portion is identical to
+    export_startup_report; the checkout sheets are produced by the existing
+    checkout_export engine and transplanted into the same workbook.
+    """
+    records = list(records)
+    wb = _build_startup_workbook(meta, records, room_names)  # Cover + Startup Report
+    _append_checkout_sheets(wb, records)                     # + one checkout sheet per record
     wb.save(output_path)

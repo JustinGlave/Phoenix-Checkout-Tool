@@ -25,8 +25,8 @@ import openpyxl
 import startup_report_export as sr
 from startup_report_export import (
     StartupReportMeta, TooManyValvesError, MAX_VALVES,
-    export_startup_report, prefill_meta, derive_product_lines,
-    map_product_line, map_valve_type, map_pass_fail,
+    export_startup_report, export_combined_report, prefill_meta, derive_product_lines,
+    map_product_line, map_valve_type, map_pass_fail, generate_executive_summary,
 )
 from startup_report_template import template_stream
 
@@ -34,8 +34,8 @@ from startup_report_template import template_stream
 def make_record(**kw):
     """A duck-typed checkout record with all attributes the engine reads."""
     base = dict(valve_tag="", project="", ats_job_number="", date="", technician="",
-                description="", model="", valve_type="Fume Hood", pass_fail="",
-                valve_min_sp="", valve_max_sp="", notes="", job_id="J1")
+                description="", location_room="", model="", valve_type="Fume Hood",
+                pass_fail="", valve_min_sp="", valve_max_sp="", notes="", job_id="J1")
     base.update(kw)
     return SimpleNamespace(**base)
 
@@ -239,6 +239,258 @@ class RealRecordCompatibilityTests(unittest.TestCase):
         self.assertEqual(ws["B15"].value, "REAL-1")
         self.assertEqual(ws["E15"].value, "General Exhaust")  # GEX -> General Exhaust
         self.assertEqual(ws["G15"].value, "PASS")
+
+
+class LocationRoomTests(unittest.TestCase):
+    def test_field_exists_with_blank_default(self):
+        from checkout_tool_backend import ValveCheckout
+        self.assertIn("location_room", ValveCheckout.__dataclass_fields__)
+        self.assertEqual(ValveCheckout().location_room, "")
+
+    def test_old_record_without_location_room_loads(self):
+        # Mirrors CheckoutStore._load: filter unknown keys by __dataclass_fields__.
+        from checkout_tool_backend import ValveCheckout
+        old = {"id": "x", "valve_tag": "V1", "valve_type": "Fume Hood"}  # no location_room
+        rec = ValveCheckout(**{k: v for k, v in old.items()
+                               if k in ValveCheckout.__dataclass_fields__})
+        self.assertEqual(rec.location_room, "")
+        self.assertEqual(rec.valve_tag, "V1")
+
+    def test_location_room_round_trips_on_real_record(self):
+        from checkout_tool_backend import ValveCheckout
+        from dataclasses import asdict
+        rec = ValveCheckout(valve_tag="V1", location_room="Lab 314")
+        reloaded = ValveCheckout(**asdict(rec))
+        self.assertEqual(reloaded.location_room, "Lab 314")
+
+    def test_location_room_writes_to_column_F(self):
+        rec = make_record(valve_tag="V1", location_room="Lab 314")
+        wb, ws, _ = export_to_temp(StartupReportMeta(), [rec])
+        self.assertEqual(ws["F15"].value, "Lab 314")
+
+    def test_blank_location_room_not_written(self):
+        rec = make_record(valve_tag="V1", location_room="")
+        wb, ws, _ = export_to_temp(StartupReportMeta(), [rec])
+        self.assertIsNone(ws["F15"].value)
+
+
+class RemovedFieldsTests(unittest.TestCase):
+    # 8 detail columns removed from the template surface per operator request.
+    BANNED = {"Mag Diff Pressure", "Primary Air from AHU", "Htg Offset", "Clg Offset",
+              "Exhaust Damper Pos.", "Air Differential", "Verify Schedule",
+              "Linkage Cotter Pins"}
+    # Detail columns that must remain after the removal.
+    REMAINING = ["Voltage", "Space Temp SP", "Space Temp", "Supply AF CMD",
+                 "Supply Feedback", "Supply Damper Pos.", "Exhaust CMD",
+                 "Exhaust Feedback", "Modify Space Temp SP (DDC)",
+                 'DP Alarm (trips at .3"wc)', "Wiring Issues", "Pressure Tubes"]
+
+    def _headers(self, ws):
+        return [ws.cell(14, c).value for c in range(1, ws.max_column + 1) if ws.cell(14, c).value]
+
+    def test_removed_headers_absent(self):
+        wb, ws, _ = export_to_temp(StartupReportMeta(project="P"),
+                                   [make_record(valve_tag="V1", pass_fail="Pass")])
+        still_present = self.BANNED & set(self._headers(ws))
+        self.assertEqual(still_present, set(), f"banned headers still present: {still_present}")
+
+    def test_removed_headers_absent_in_template(self):
+        # The embedded template itself no longer carries the columns.
+        ws = openpyxl.load_workbook(template_stream())["Startup Report"]
+        hdrs = [ws.cell(14, c).value for c in range(1, ws.max_column + 1)]
+        self.assertEqual(self.BANNED & set(h for h in hdrs if h), set())
+
+    def test_remaining_detail_headers_present(self):
+        wb, ws, _ = export_to_temp(StartupReportMeta(), [make_record(valve_tag="V1")])
+        present = self._headers(ws)
+        for h in self.REMAINING:
+            self.assertIn(h, present, f"expected detail header missing: {h}")
+
+    def test_app_writes_no_detail_columns(self):
+        # The app still writes only B..K; every detail column (L onward) stays blank.
+        from openpyxl.utils import get_column_letter
+        rec = make_record(valve_tag="V1", pass_fail="Pass", notes="n", location_room="r")
+        wb, ws, _ = export_to_temp(StartupReportMeta(), [rec])
+        for c in range(12, ws.max_column + 1):  # L onward
+            self.assertIsNone(ws[f"{get_column_letter(c)}15"].value,
+                              f"col {get_column_letter(c)} should be blank")
+
+
+class NotesWrapTests(unittest.TestCase):
+    def test_notes_column_wraps_all_data_rows(self):
+        rec = make_record(valve_tag="V1", notes="a long note\nsecond line")
+        wb, ws, _ = export_to_temp(StartupReportMeta(), [rec])
+        for r in (15, 16, 30, 54):
+            self.assertTrue(ws[f"K{r}"].alignment.wrap_text, f"K{r} should wrap")
+
+    def test_wrap_does_not_break_other_columns(self):
+        rec = make_record(valve_tag="V1", notes="x")
+        wb, ws, _ = export_to_temp(StartupReportMeta(), [rec])
+        # B column shouldn't have been forced to wrap by the Notes-only logic.
+        self.assertEqual(ws["B15"].value, "V1")
+
+    def test_notes_rows_autofit_height(self):
+        # The template's fixed custom row height is cleared so Excel auto-fits wrap.
+        rec = make_record(valve_tag="V1", notes="line one\nline two\nline three")
+        wb, ws, _ = export_to_temp(StartupReportMeta(), [rec])
+        for r in (15, 30, 54):
+            rd = ws.row_dimensions[r]
+            self.assertFalse(bool(rd.customHeight), f"row {r} must not be custom height")
+            self.assertIsNone(rd.height, f"row {r} height must be cleared for auto-fit")
+
+
+class ExecutiveSummaryTests(unittest.TestCase):
+    def test_writes_to_g4(self):
+        wb, ws, _ = export_to_temp(StartupReportMeta(executive_summary="Hello"), [])
+        self.assertEqual(ws["G4"].value, "Hello")
+
+    def test_summary_with_failures_lists_tags(self):
+        recs = [make_record(valve_tag="VAV-101", pass_fail="Pass"),
+                make_record(valve_tag="VAV-103", pass_fail="Fail"),
+                make_record(valve_tag="FH-204", pass_fail="Fail")]
+        s = generate_executive_summary(recs)
+        self.assertIn("3 valves checked", s)
+        self.assertIn("1 passed, 2 failed", s)
+        self.assertIn("VAV-103", s)
+        self.assertIn("FH-204", s)
+        self.assertIn("See Notes column", s)
+
+    def test_summary_all_pass(self):
+        recs = [make_record(valve_tag="A", pass_fail="Pass"),
+                make_record(valve_tag="B", pass_fail="Pass")]
+        self.assertEqual(generate_executive_summary(recs),
+                         "All checked valves passed. No issues noted.")
+
+    def test_summary_empty(self):
+        self.assertEqual(generate_executive_summary([]), "No valves checked.")
+
+    def test_summary_unset_no_failures(self):
+        recs = [make_record(valve_tag="A", pass_fail="Pass"),
+                make_record(valve_tag="B", pass_fail="")]
+        s = generate_executive_summary(recs)
+        self.assertIn("0 failed", s)
+        self.assertIn("No issues noted", s)
+
+    def test_summary_does_not_invent_issues(self):
+        # No "Fail" anywhere -> never mentions issues/failures count > 0.
+        recs = [make_record(valve_tag="A", pass_fail="Pass")]
+        s = generate_executive_summary(recs)
+        self.assertNotIn("failed.", s.replace("0 failed.", ""))
+        self.assertNotIn("Issue", s)
+
+    def test_prefill_includes_generated_summary(self):
+        recs = [make_record(valve_tag="A", pass_fail="Pass"),
+                make_record(valve_tag="BAD-1", pass_fail="Fail")]
+        meta = prefill_meta(recs[0], recs)
+        self.assertIn("BAD-1", meta.executive_summary)
+        self.assertIn("1 failed", meta.executive_summary)
+
+
+class CombinedExportTests(unittest.TestCase):
+    """The single combined workbook: Cover + Startup Report + one sheet per checkout."""
+
+    def _records(self):
+        from checkout_tool_backend import ValveCheckout
+        return [
+            ValveCheckout(valve_tag="03-FH-001", valve_type="Fume Hood", model="CELERIS 2",
+                          pass_fail="Pass", location_room="Lab 314", valve_min_sp="120",
+                          valve_max_sp="900", notes="ok"),
+            ValveCheckout(valve_tag="03-GEX-002", valve_type="GEX", model="CELERIS 2",
+                          pass_fail="Fail", notes="rebalance"),
+            ValveCheckout(valve_tag="03-PBC-003", valve_type="PBC Room", model="PBC (CSCP)",
+                          pass_fail="Pass"),
+        ]
+
+    def _export(self, meta, records):
+        out = os.path.join(tempfile.mkdtemp(prefix="sr_comb_"), "combined.xlsx")
+        export_combined_report(meta, records, out)
+        return openpyxl.load_workbook(out)
+
+    def test_sheet_layout(self):
+        recs = self._records()
+        wb = self._export(prefill_meta(recs[0], recs), recs)
+        names = wb.sheetnames
+        self.assertEqual(names[0], "Cover")
+        self.assertEqual(names[1], "Startup Report")
+        self.assertEqual(len(names), 2 + len(recs))  # two report tabs + one per checkout
+        for r in recs:
+            self.assertIn(r.valve_tag, names[2:], f"missing checkout sheet for {r.valve_tag}")
+
+    def test_startup_tab_populated(self):
+        recs = self._records()
+        meta = prefill_meta(recs[0], recs); meta.site_name = "Memorial"
+        ws = self._export(meta, recs)["Startup Report"]
+        self.assertEqual(ws["B15"].value, "03-FH-001")
+        self.assertEqual(ws["F15"].value, "Lab 314")
+        self.assertEqual(ws["C4"].value, "Memorial")
+        self.assertTrue(ws["G4"].value)  # generated exec summary
+
+    def test_checkout_sheet_filled(self):
+        recs = self._records()
+        wb = self._export(prefill_meta(recs[0], recs), recs)
+        ws = wb["03-FH-001"]
+        # checkout_export.fill_sheet writes the valve tag to C3 of the checkout sheet.
+        self.assertEqual(ws["C3"].value, "03-FH-001")
+
+    def test_cover_formulas_intact(self):
+        recs = self._records()
+        wb = self._export(prefill_meta(recs[0], recs), recs)
+        self.assertTrue(str(wb["Cover"]["C6"].value).startswith("="))
+
+    def test_combined_over_cap_raises(self):
+        from checkout_tool_backend import ValveCheckout
+        recs = [ValveCheckout(valve_tag=f"V{i}", valve_type="Fume Hood")
+                for i in range(MAX_VALVES + 1)]
+        with self.assertRaises(TooManyValvesError):
+            export_combined_report(StartupReportMeta(), recs,
+                                   os.path.join(tempfile.mkdtemp(), "x.xlsx"))
+
+
+class JobSourcedMetadataTests(unittest.TestCase):
+    """Phase 3: project identity is sourced from the Job; column F from the room."""
+
+    def _job(self):
+        from checkout_tool_backend import Job
+        return Job(job_number="P-100", job_name="Acme Project", project_manager="Jane PM",
+                   building_address="123 Main St", site_name="Main Campus", floor="3")
+
+    def test_prefill_sources_identity_from_job(self):
+        job = self._job()
+        rec = make_record(valve_tag="V1", technician="Tech A", date="2026-06-16", description="d")
+        meta = prefill_meta(rec, [rec], job)
+        self.assertEqual(meta.project, "Acme Project")
+        self.assertEqual(meta.ats_job_number, "P-100")
+        self.assertEqual(meta.site_name, "Main Campus")
+        self.assertEqual(meta.building, "123 Main St")
+        self.assertEqual(meta.floor, "3")
+        self.assertEqual(meta.project_manager, "Jane PM")
+        self.assertEqual(meta.technician, "Tech A")   # per-export, from the record
+
+    def test_export_writes_job_sourced_cells(self):
+        job = self._job()
+        rec = make_record(valve_tag="V1")
+        wb, ws, _ = export_to_temp(prefill_meta(rec, [rec], job), [rec])
+        self.assertEqual(ws["C3"].value, "Acme Project")  # Project   <- job_name
+        self.assertEqual(ws["C4"].value, "Main Campus")   # Site Name <- job.site_name
+        self.assertEqual(ws["C5"].value, "123 Main St")   # Building  <- building_address
+        self.assertEqual(ws["C6"].value, "3")             # Floor     <- job.floor
+        self.assertEqual(ws["C8"].value, "P-100")         # ATS Job # <- job_number
+
+    def test_column_f_from_room_names(self):
+        rec = make_record(valve_tag="V1")
+        rec.id = "rid-1"
+        out = os.path.join(tempfile.mkdtemp(prefix="sr_f_"), "o.xlsx")
+        export_startup_report(StartupReportMeta(), [rec], out, {"rid-1": "Lab 5"})
+        ws = openpyxl.load_workbook(out)["Startup Report"]
+        self.assertEqual(ws["F15"].value, "Lab 5")
+
+    def test_combined_column_f_from_room_names(self):
+        from checkout_tool_backend import ValveCheckout
+        rec = ValveCheckout(id="cid-1", valve_tag="V1", valve_type="Fume Hood", pass_fail="Pass")
+        out = os.path.join(tempfile.mkdtemp(prefix="sr_cf_"), "o.xlsx")
+        export_combined_report(StartupReportMeta(), [rec], out, {"cid-1": "Room A"})
+        ws = openpyxl.load_workbook(out)["Startup Report"]
+        self.assertEqual(ws["F15"].value, "Room A")
 
 
 if __name__ == "__main__":

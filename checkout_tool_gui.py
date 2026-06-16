@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Optional
 
@@ -16,17 +17,17 @@ from PySide6.QtGui import QAction, QBrush, QColor, QDesktopServices, QFont, QIco
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QComboBox, QDateEdit, QDialog,
     QDialogButtonBox, QFileDialog, QFormLayout, QHBoxLayout, QHeaderView,
-    QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
+    QInputDialog, QLabel, QLineEdit, QMainWindow, QMenu, QMessageBox,
     QPlainTextEdit, QProgressBar, QProgressDialog, QPushButton, QScrollArea, QSpinBox, QSplitter,
     QStackedWidget, QTabWidget, QTableWidget, QTableWidgetItem, QTreeWidget,
     QTreeWidgetItem, QVBoxLayout, QWidget,
 )
 
-from checkout_tool_backend import CheckoutStore, Job, ValveCheckout, DATA_FILE
+from checkout_tool_backend import CheckoutStore, Job, Room, ValveCheckout, DATA_FILE
 from checkout_export import export_records, NOTES_MAX_LINES
 from startup_report_export import (
     StartupReportMeta, TooManyValvesError, MAX_VALVES,
-    export_startup_report, prefill_meta,
+    export_startup_report, export_combined_report, prefill_meta,
 )
 from version import __version__
 import updater
@@ -671,10 +672,11 @@ class NewJobDialog(QDialog):
 
 
 class NewCheckoutDialog(QDialog):
-    def __init__(self, job: Job, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, job: Job, room: Room, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._job = job
-        self.setWindowTitle(f"New Checkout  \u2014  {_job_label(job)}")
+        self._room = room
+        self.setWindowTitle(f"New Valve  \u2014  {room.name}")
         self.setModal(True)
         self.resize(440, 220)
 
@@ -710,6 +712,7 @@ class NewCheckoutDialog(QDialog):
     def get_record(self) -> ValveCheckout:
         return ValveCheckout(
             job_id=self._job.id,
+            room_id=self._room.id,
             valve_tag=self._valve_tag.text().strip(),
             project=self._job.job_name,
             ats_job_number=self._job.job_number,
@@ -726,10 +729,11 @@ class BatchCheckoutDialog(QDialog):
     MAV-1-100 … MAV-1-119 (all sharing technician, description, date).
     """
 
-    def __init__(self, job: Job, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, job: Job, room: Room, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self._job = job
-        self.setWindowTitle(f"Batch Add Checkouts  \u2014  {_job_label(job)}")
+        self._room = room
+        self.setWindowTitle(f"Batch Add Valves  \u2014  {room.name}")
         self.setModal(True)
         self.resize(480, 260)
 
@@ -844,6 +848,7 @@ class BatchCheckoutDialog(QDialog):
         return [
             ValveCheckout(
                 job_id=self._job.id,
+                room_id=self._room.id,
                 valve_tag=tag,
                 project=self._job.job_name,
                 ats_job_number=self._job.job_number,
@@ -962,26 +967,23 @@ class BugSuggestionDialog(QDialog):
 
 
 class StartupReportDialog(QDialog):
-    """Collects job-level metadata for the Startup Report export.
+    """Collects the per-export fields for the Startup Report / combined export.
 
-    Project / Technician / Date / ATS Job # / Description are pre-filled from a
-    representative checkout record; Site / Building / Floor / Executive Summary are
-    collected here. Product Line(s) is pre-filled from the job's valve types. Any
-    field may be left blank (acceptable for v1).
+    Project identity (Project Name/Number, Site Name, Building, Floor, Project
+    Manager) is the Job's metadata — sourced from the job and carried through
+    unchanged. This dialog only collects/edits the per-export fields: Technician,
+    Date, Product Line(s), Description, Executive Summary.
     """
 
     def __init__(self, meta: StartupReportMeta, parent: Optional[QWidget] = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Export Startup Report")
         self.setModal(True)
-        self.resize(460, 420)
+        self.resize(460, 340)
 
-        self._project    = QLineEdit(meta.project)
-        self._site_name  = QLineEdit(meta.site_name)
-        self._building   = QLineEdit(meta.building)
-        self._floor      = QLineEdit(meta.floor)
+        self._meta = meta   # carries the job-sourced fields through unchanged
+
         self._technician = QLineEdit(meta.technician)
-        self._ats_job    = QLineEdit(meta.ats_job_number)
         self._date       = QLineEdit(meta.date_of_checkout)
         self._product    = QLineEdit(meta.product_lines)
         self._desc       = QLineEdit(meta.description)
@@ -990,15 +992,10 @@ class StartupReportDialog(QDialog):
         self._exec.setMinimumHeight(90)
 
         form = QFormLayout()
-        form.addRow("Project",          self._project)
-        form.addRow("Site Name",        self._site_name)
-        form.addRow("Building",         self._building)
-        form.addRow("Floor",            self._floor)
-        form.addRow("Technician",       self._technician)
-        form.addRow("ATS Job Number",   self._ats_job)
-        form.addRow("Date of Checkout", self._date)
-        form.addRow("Product Line(s)",  self._product)
-        form.addRow("Description",      self._desc)
+        form.addRow("Technician",        self._technician)
+        form.addRow("Date of Checkout",  self._date)
+        form.addRow("Product Line(s)",   self._product)
+        form.addRow("Description",       self._desc)
         form.addRow("Executive Summary", self._exec)
 
         btns = QDialogButtonBox()
@@ -1008,21 +1005,19 @@ class StartupReportDialog(QDialog):
         btns.rejected.connect(self.reject)
 
         lay = QVBoxLayout(self)
-        hint = QLabel("Fields are pre-filled from the selected checkout. "
-                      "Edit as needed; blanks are allowed.")
+        hint = QLabel("Project, Site Name, Building, Floor and Job Number come from "
+                      "the job's details. These fields are pre-filled from the "
+                      "checkout — edit as needed.")
         hint.setWordWrap(True)
         lay.addWidget(hint)
         lay.addLayout(form)
         lay.addWidget(btns)
 
     def metadata(self) -> StartupReportMeta:
-        return StartupReportMeta(
-            project=self._project.text().strip(),
-            site_name=self._site_name.text().strip(),
-            building=self._building.text().strip(),
-            floor=self._floor.text().strip(),
+        # Carry the job-sourced fields through unchanged; override the per-export ones.
+        return replace(
+            self._meta,
             technician=self._technician.text().strip(),
-            ats_job_number=self._ats_job.text().strip(),
             date_of_checkout=self._date.text().strip(),
             product_lines=self._product.text().strip(),
             description=self._desc.text().strip(),
@@ -1096,6 +1091,9 @@ class MainWindow(QMainWindow):
         export_sr_act = QAction("Export Startup Report\u2026", self)
         export_sr_act.triggered.connect(self._on_export_startup_report)
         file_menu.addAction(export_sr_act)
+        export_combined_act = QAction("Export Startup & Checkout Report\u2026", self)
+        export_combined_act.triggered.connect(self._on_export_combined_report)
+        file_menu.addAction(export_combined_act)
         file_menu.addSeparator()
         backup_act = QAction("Backup Data\u2026", self)
         backup_act.triggered.connect(self._backup_data)
@@ -1212,8 +1210,8 @@ class MainWindow(QMainWindow):
         outer_lay.setContentsMargins(0, 0, 0, 0)
         outer_lay.setSpacing(8)
 
-        # Page 0: welcome  |  Page 1: checkout editor
-        # Page 2: archived job summary  |  Page 3: active job summary
+        # Page 0: welcome  |  Page 1: checkout editor  |  Page 2: archived job
+        # Page 3: active job detail  |  Page 4: room view
         self._main_stack = QStackedWidget()
         self._main_stack.addWidget(self._build_welcome_panel())  # index 0
 
@@ -1227,6 +1225,7 @@ class MainWindow(QMainWindow):
 
         self._main_stack.addWidget(self._build_archived_panel()) # index 2
         self._main_stack.addWidget(self._build_job_panel())      # index 3
+        self._main_stack.addWidget(self._build_room_panel())     # index 4
 
         outer_lay.addWidget(self._main_stack, stretch=1)
 
@@ -1510,6 +1509,30 @@ class MainWindow(QMainWindow):
 
         outer_lay.addWidget(hdr)
 
+        # \u2500\u2500 Project details \u2014 the sole source of project-level metadata \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+        self._job_panel_id: Optional[str] = None
+        details = QWidget()
+        details.setObjectName("Panel")
+        det_lay = QFormLayout(details)
+        det_lay.setContentsMargins(16, 12, 16, 12)
+        self._jp_project_number   = QLineEdit()
+        self._jp_project_name     = QLineEdit()
+        self._jp_project_manager  = QLineEdit()
+        self._jp_building_address = QLineEdit()
+        self._jp_site_name        = QLineEdit()
+        self._jp_floor            = QLineEdit()
+        for w in (self._jp_project_number, self._jp_project_name,
+                  self._jp_project_manager, self._jp_building_address,
+                  self._jp_site_name, self._jp_floor):
+            w.editingFinished.connect(self._save_job_details)
+        det_lay.addRow("Project Number",   self._jp_project_number)
+        det_lay.addRow("Project Name",     self._jp_project_name)
+        det_lay.addRow("Project Manager",  self._jp_project_manager)
+        det_lay.addRow("Building Address", self._jp_building_address)
+        det_lay.addRow("Site Name",        self._jp_site_name)
+        det_lay.addRow("Floor",            self._jp_floor)
+        outer_lay.addWidget(details)
+
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QScrollArea.Shape.NoFrame)
@@ -1525,12 +1548,19 @@ class MainWindow(QMainWindow):
         return outer
 
     def _populate_job_panel(self, job_id: str) -> None:
-        """Fill the active job summary panel for the given job."""
+        """Fill the active job detail panel for the given job."""
         job = self._store.get_job(job_id)
         if not job:
             return
 
         self._job_hdr_title.setText(_job_label(job))
+        self._job_panel_id = job_id
+        self._jp_project_number.setText(job.job_number)
+        self._jp_project_name.setText(job.job_name)
+        self._jp_project_manager.setText(job.project_manager)
+        self._jp_building_address.setText(job.building_address)
+        self._jp_site_name.setText(job.site_name)
+        self._jp_floor.setText(job.floor)
 
         records = self._store.records_for_job(job_id)
         total    = len(records)
@@ -1560,6 +1590,110 @@ class MainWindow(QMainWindow):
             return
 
         self._job_list_layout.insertWidget(0, self._build_checkouts_panel(records, show_type=True))
+
+    def _save_job_details(self) -> None:
+        """Persist edits from the job detail form (the sole source of project metadata)."""
+        job_id = getattr(self, "_job_panel_id", None)
+        if not job_id:
+            return
+        job = self._store.get_job(job_id)
+        if not job:
+            return
+        job.job_number       = self._jp_project_number.text().strip()
+        job.job_name         = self._jp_project_name.text().strip()
+        job.project_manager  = self._jp_project_manager.text().strip()
+        job.building_address = self._jp_building_address.text().strip()
+        job.site_name        = self._jp_site_name.text().strip()
+        job.floor            = self._jp_floor.text().strip()
+        self._store.update_job(job)
+        self._job_hdr_title.setText(_job_label(job))
+
+    # ── Room view ──────────────────────────────────────────────────────────────
+
+    def _build_room_panel(self) -> QWidget:
+        """View shown when a room is selected: its valves, sortable via dropdown."""
+        outer = QWidget()
+        lay = QVBoxLayout(outer)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(8)
+
+        hdr = QWidget()
+        hdr.setObjectName("Panel")
+        hdr.setFixedHeight(72)
+        hdr_lay = QHBoxLayout(hdr)
+        hdr_lay.setContentsMargins(16, 12, 16, 12)
+        hdr_lay.setSpacing(12)
+        self._room_hdr_title = QLabel("")
+        self._room_hdr_title.setObjectName("ProjectTitle")
+        hdr_lay.addWidget(self._room_hdr_title)
+        hdr_lay.addStretch()
+        hdr_lay.addWidget(QLabel("Sort by"))
+        self._room_sort_combo = QComboBox()
+        self._room_sort_combo.addItems(["Valve Tag", "Valve Type", "Pass/Fail", "Model"])
+        self._room_sort_combo.currentIndexChanged.connect(self._resort_room)
+        hdr_lay.addWidget(self._room_sort_combo)
+        self._room_sort_desc = False
+        self._room_sort_btn = SecondaryButton("▲")   # ascending
+        self._room_sort_btn.setFixedWidth(40)
+        self._room_sort_btn.clicked.connect(self._toggle_room_sort_dir)
+        hdr_lay.addWidget(self._room_sort_btn)
+        lay.addWidget(hdr)
+
+        self._room_table = _PhoenixTable(0, 4)
+        self._room_table.setHorizontalHeaderLabels(["Valve Tag", "Type", "Pass/Fail", "Model"])
+        self._room_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self._room_table.cellDoubleClicked.connect(self._on_room_table_double_click)
+        lay.addWidget(self._room_table, stretch=1)
+        return outer
+
+    def _populate_room_panel(self, room_id: str) -> None:
+        room = self._store.get_room(room_id)
+        if not room:
+            return
+        self._room_panel_id = room_id
+        n = len(self._store.records_for_room(room_id))
+        self._room_hdr_title.setText(
+            f"{room.name}   •   {n} valve{'s' if n != 1 else ''}"
+        )
+        self._fill_room_table()
+
+    def _fill_room_table(self) -> None:
+        room_id = getattr(self, "_room_panel_id", None)
+        if not room_id:
+            return
+        recs = self._store.records_for_room(room_id)
+        keymap = {
+            0: lambda r: (r.valve_tag or "").lower(),
+            1: lambda r: (r.valve_type or "").lower(),
+            2: lambda r: (r.pass_fail or "").lower(),
+            3: lambda r: (r.model or "").lower(),
+        }
+        key = keymap.get(self._room_sort_combo.currentIndex(), keymap[0])
+        recs = sorted(recs, key=key, reverse=self._room_sort_desc)
+
+        self._room_row_ids = [r.id for r in recs]
+        self._room_table.setRowCount(len(recs))
+        for i, r in enumerate(recs):
+            for col, val in enumerate([r.valve_tag, r.valve_type, r.pass_fail, r.model]):
+                item = QTableWidgetItem(val or "")
+                if col == 2 and r.pass_fail == "Pass":
+                    item.setForeground(QBrush(_PASS_COLOR))
+                elif col == 2 and r.pass_fail == "Fail":
+                    item.setForeground(QBrush(_FAIL_COLOR))
+                self._room_table.setItem(i, col, item)
+
+    def _resort_room(self, *_args) -> None:
+        self._fill_room_table()
+
+    def _toggle_room_sort_dir(self) -> None:
+        self._room_sort_desc = not self._room_sort_desc
+        self._room_sort_btn.setText("▼" if self._room_sort_desc else "▲")
+        self._fill_room_table()
+
+    def _on_room_table_double_click(self, row: int, _col: int) -> None:
+        ids = getattr(self, "_room_row_ids", [])
+        if 0 <= row < len(ids):
+            self._select_by_id(ids[row])
 
     # ── Header panel ─────────────────────────────────────────────────────────
 
@@ -2131,16 +2265,26 @@ class MainWindow(QMainWindow):
         job_font.setBold(True)
         job_font.setPointSize(10)
 
+        room_font = QFont()
+        room_font.setBold(True)
+
         for job in self._store.all_jobs():
             job_item = QTreeWidgetItem([_job_label(job)])
             job_item.setFont(0, job_font)
             job_item.setData(0, self._ROLE, ("job", job.id))
 
-            for record in self._store.records_for_job(job.id):
-                child = QTreeWidgetItem([record.valve_tag or "(No Tag)"])
-                child.setData(0, self._ROLE, ("checkout", record.id))
-                self._apply_item_color(child, record.pass_fail)
-                job_item.addChild(child)
+            for room in self._store.rooms_for_job(job.id):
+                recs = self._store.records_for_room(room.id)
+                room_item = QTreeWidgetItem([f"{room.name or '(Room)'}  ({len(recs)})"])
+                room_item.setFont(0, room_font)
+                room_item.setData(0, self._ROLE, ("room", room.id))
+                for record in recs:
+                    child = QTreeWidgetItem([record.valve_tag or "(No Tag)"])
+                    child.setData(0, self._ROLE, ("checkout", record.id))
+                    self._apply_item_color(child, record.pass_fail)
+                    room_item.addChild(child)
+                job_item.addChild(room_item)
+                room_item.setExpanded(True)
 
             self._tree.addTopLevelItem(job_item)
             job_item.setExpanded(True)
@@ -2178,26 +2322,23 @@ class MainWindow(QMainWindow):
             self._load_record(None)
 
     def _select_by_id(self, target_id: str) -> None:
-        for i in range(self._tree.topLevelItemCount()):
-            item = self._tree.topLevelItem(i)
-            if item is None:
-                continue
+        def walk(item: QTreeWidgetItem) -> bool:
             role = item.data(0, self._ROLE)
-            if role is None:
-                continue
-            kind, id_ = role
-            if kind in ("job", "archived_job") and id_ == target_id:
-                self._tree.setCurrentItem(item)
+            if role is not None:
+                kind, id_ = role
+                if kind != "separator" and id_ == target_id:
+                    self._tree.setCurrentItem(item)
+                    return True
+            for k in range(item.childCount()):
+                child = item.child(k)
+                if child is not None and walk(child):
+                    return True
+            return False
+
+        for i in range(self._tree.topLevelItemCount()):
+            top = self._tree.topLevelItem(i)
+            if top is not None and walk(top):
                 return
-            if kind == "job":
-                for j in range(item.childCount()):
-                    child = item.child(j)
-                    if child is None:
-                        continue
-                    _, cid = child.data(0, self._ROLE)
-                    if cid == target_id:
-                        self._tree.setCurrentItem(child)
-                        return
 
     def _apply_tree_filter(self, text: str) -> None:
         q = text.strip().lower()
@@ -2220,28 +2361,43 @@ class MainWindow(QMainWindow):
                 else:
                     job_item.setHidden(False)
                 continue
-            any_visible = False
-            for j in range(job_item.childCount()):
-                child = job_item.child(j)
-                if child is None:
+
+            # active job -> rooms -> valves
+            job_visible = False
+            for r in range(job_item.childCount()):
+                room_item = job_item.child(r)
+                if room_item is None:
                     continue
+                room_any = False
+                for v in range(room_item.childCount()):
+                    valve = room_item.child(v)
+                    if valve is None:
+                        continue
+                    if q:
+                        _, cid = valve.data(0, self._ROLE)
+                        rec = self._store.get(cid)
+                        hidden = not (
+                            q in valve.text(0).lower()
+                            or (rec and q in (rec.technician or "").lower())
+                            or (rec and q in (rec.description or "").lower())
+                            or (rec and q in (rec.valve_type or "").lower())
+                        )
+                    else:
+                        hidden = False
+                    valve.setHidden(hidden)
+                    if not hidden:
+                        room_any = True
                 if q:
-                    _, cid = child.data(0, self._ROLE)
-                    rec = self._store.get(cid)
-                    hidden = not (
-                        q in child.text(0).lower()
-                        or (rec and q in (rec.technician or "").lower())
-                        or (rec and q in (rec.description or "").lower())
-                        or (rec and q in (rec.valve_type or "").lower())
-                    )
+                    room_hidden = not (room_any or q in room_item.text(0).lower())
+                    room_item.setHidden(room_hidden)
+                    if not room_hidden:
+                        room_item.setExpanded(True)
+                        job_visible = True
                 else:
-                    hidden = False
-                child.setHidden(hidden)
-                if not hidden:
-                    any_visible = True
+                    room_item.setHidden(False)
             if q:
-                job_item.setHidden(not any_visible)
-                if any_visible:
+                job_item.setHidden(not job_visible)
+                if job_visible:
                     job_item.setExpanded(True)
             else:
                 job_item.setHidden(False)
@@ -2263,10 +2419,26 @@ class MainWindow(QMainWindow):
         kind, id_ = items[0].data(0, self._ROLE)
         if kind == "job":
             return id_
+        if kind == "room":
+            rm = self._store.get_room(id_)
+            return rm.job_id if rm else None
         if kind == "checkout":
             rec = self._store.get(id_)
             return rec.job_id if rec else None
         return None  # archived_job and separator are not usable as targets
+
+    def _selected_room_id(self) -> Optional[str]:
+        """Return the room_id of the selected room, or of the selected valve's room."""
+        items = self._tree.selectedItems()
+        if not items:
+            return None
+        kind, id_ = items[0].data(0, self._ROLE)
+        if kind == "room":
+            return id_
+        if kind == "checkout":
+            rec = self._store.get(id_)
+            return rec.room_id if rec else None
+        return None
 
     # ── Tree signals ──────────────────────────────────────────────────────────
 
@@ -2301,10 +2473,18 @@ class MainWindow(QMainWindow):
             return
 
         if kind == "job":
+            # Valves are added to a room, so the toolbar add buttons are off here.
+            self._new_checkout_btn.setEnabled(False)
+            self._batch_btn.setEnabled(False)
+            self._populate_job_panel(id_)
+            self._main_stack.setCurrentIndex(3)   # active job detail
+            return
+
+        if kind == "room":
             self._new_checkout_btn.setEnabled(True)
             self._batch_btn.setEnabled(True)
-            self._populate_job_panel(id_)
-            self._main_stack.setCurrentIndex(3)   # active job summary
+            self._populate_room_panel(id_)
+            self._main_stack.setCurrentIndex(4)   # room view
             return
 
         # kind == "checkout"
@@ -2330,30 +2510,44 @@ class MainWindow(QMainWindow):
         menu = QMenu(self)
 
         if kind == "job":
-            add_act        = menu.addAction("Add Checkout to Job")
-            batch_act      = menu.addAction("Batch Add Checkouts\u2026")
+            add_room_act   = menu.addAction("Add Room")
             menu.addSeparator()
             export_job_act = menu.addAction("Export All Checkouts to Excel\u2026")
             export_sr_act  = menu.addAction("Export Startup Report\u2026")
+            export_combined_act = menu.addAction("Export Startup & Checkout Report\u2026")
             menu.addSeparator()
             archive_act    = menu.addAction("Archive Job")
             menu.addSeparator()
             del_act        = menu.addAction("Delete Job")
             action = menu.exec(self._tree.mapToGlobal(pos))
-            if action == add_act:
-                job = self._store.get_job(id_)
-                if job:
-                    self._open_new_checkout_for_job(job)
-            elif action == batch_act:
-                self._batch_add_for_job(id_)
+            if action == add_room_act:
+                self._add_room(id_)
             elif action == export_job_act:
                 self._export_job(id_)
             elif action == export_sr_act:
                 self._export_startup_report(id_)
+            elif action == export_combined_act:
+                self._export_combined_report(id_)
             elif action == archive_act:
                 self._archive_job(id_)
             elif action == del_act:
                 self._delete_job(id_)
+
+        elif kind == "room":
+            add_act    = menu.addAction("Add Valve")
+            batch_act  = menu.addAction("Batch Add Valves\u2026")
+            menu.addSeparator()
+            rename_act = menu.addAction("Rename Room")
+            del_act    = menu.addAction("Delete Room")
+            action = menu.exec(self._tree.mapToGlobal(pos))
+            if action == add_act:
+                self._open_new_checkout_for_room(id_)
+            elif action == batch_act:
+                self._batch_add_for_room(id_)
+            elif action == rename_act:
+                self._rename_room(id_)
+            elif action == del_act:
+                self._delete_room(id_)
 
         elif kind == "archived_job":
             restore_act = menu.addAction("Restore Job")
@@ -2656,7 +2850,15 @@ class MainWindow(QMainWindow):
             notes="BACnet MS/TP communication not established. Verify address 42 and baud rate. RS485 wiring confirmed.",
         )
 
-        for r in (r1, r2, r3, r4, r5, r6, r7):
+        room_a = Room(job_id=job.id, name="Lab 101")
+        room_b = Room(job_id=job.id, name="Lab 102")
+        self._store.add_room(room_a)
+        self._store.add_room(room_b)
+        for r in (r1, r2, r3, r4):
+            r.room_id = room_a.id
+            self._store.add(r)
+        for r in (r5, r6, r7):
+            r.room_id = room_b.id
             self._store.add(r)
 
         self._refresh_tree(select_id=r1.id)
@@ -2701,36 +2903,80 @@ class MainWindow(QMainWindow):
             self._refresh_tree(select_id=job.id)
 
     def _on_new_checkout(self) -> None:
-        job_id = self._selected_job_id()
-        if not job_id:
-            QMessageBox.information(self, "No Job Selected",
-                                    "Select or create a job first, then add a checkout.")
+        room_id = self._selected_room_id()
+        if not room_id:
+            QMessageBox.information(self, "No Room Selected",
+                                    "Select a room first (right-click a job → Add Room), "
+                                    "then add a valve.")
             return
-        job = self._store.get_job(job_id)
-        if job:
-            self._open_new_checkout_for_job(job)
+        self._open_new_checkout_for_room(room_id)
 
     def _on_batch_add(self) -> None:
-        job_id = self._selected_job_id()
-        if not job_id:
-            QMessageBox.information(self, "No Job Selected",
-                                    "Select a job first, then batch add checkouts.")
+        room_id = self._selected_room_id()
+        if not room_id:
+            QMessageBox.information(self, "No Room Selected",
+                                    "Select a room first, then batch add valves.")
             return
-        self._batch_add_for_job(job_id)
+        self._batch_add_for_room(room_id)
 
-    def _batch_add_for_job(self, job_id: str) -> None:
-        job = self._store.get_job(job_id)
+    # ── Room actions ───────────────────────────────────────────────────────────
+
+    def _add_room(self, job_id: str) -> None:
+        if not self._store.get_job(job_id):
+            return
+        name, ok = QInputDialog.getText(self, "Add Room", "Room name:")
+        if not ok or not name.strip():
+            return
+        room = Room(job_id=job_id, name=name.strip())
+        self._store.add_room(room)
+        self._refresh_tree(select_id=room.id)
+
+    def _rename_room(self, room_id: str) -> None:
+        room = self._store.get_room(room_id)
+        if not room:
+            return
+        name, ok = QInputDialog.getText(self, "Rename Room", "Room name:", text=room.name)
+        if not ok or not name.strip():
+            return
+        room.name = name.strip()
+        self._store.update_room(room)
+        self._refresh_tree(select_id=room.id)
+
+    def _delete_room(self, room_id: str) -> None:
+        room = self._store.get_room(room_id)
+        if not room:
+            return
+        n = len(self._store.records_for_room(room_id))
+        msg = (
+            f"Delete room '{room.name}'?\n\n"
+            f"This will also delete {n} valve{'s' if n != 1 else ''} in it."
+        )
+        if QMessageBox.question(
+            self, "Delete Room", msg,
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        ) == QMessageBox.StandardButton.Yes:
+            self._store.delete_room(room_id)
+            if self._current_id and not self._store.get(self._current_id):
+                self._current_id = None
+            self._refresh_tree()
+            self._load_record(None)
+
+    def _batch_add_for_room(self, room_id: str) -> None:
+        room = self._store.get_room(room_id)
+        if not room:
+            return
+        job = self._store.get_job(room.job_id)
         if not job:
             return
-        dlg = BatchCheckoutDialog(job, self)
+        dlg = BatchCheckoutDialog(job, room, self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         records = dlg.get_records()
-        existing_tags = {r.valve_tag.lower() for r in self._store.records_for_job(job_id)}
+        existing_tags = {r.valve_tag.lower() for r in self._store.records_for_room(room_id)}
         dupes = [r.valve_tag for r in records if r.valve_tag.lower() in existing_tags]
         if dupes:
             msg = (
-                "The following tags already exist in this job:\n\n"
+                "The following tags already exist in this room:\n\n"
                 + "\n".join(f"  • {t}" for t in dupes)
                 + "\n\nProceed anyway?"
             )
@@ -2744,8 +2990,14 @@ class MainWindow(QMainWindow):
         if records:
             self._refresh_tree(select_id=records[0].id)
 
-    def _open_new_checkout_for_job(self, job: Job) -> None:
-        dlg = NewCheckoutDialog(job, self)
+    def _open_new_checkout_for_room(self, room_id: str) -> None:
+        room = self._store.get_room(room_id)
+        if not room:
+            return
+        job = self._store.get_job(room.job_id)
+        if not job:
+            return
+        dlg = NewCheckoutDialog(job, room, self)
         if dlg.exec() == QDialog.DialogCode.Accepted:
             record = dlg.get_record()
             self._store.add(record)
@@ -2817,6 +3069,15 @@ class MainWindow(QMainWindow):
             return
         self._export_job(job_id)
 
+    def _room_names_for(self, records) -> dict:
+        """Map record.id -> its room's name (Startup Report column F)."""
+        names = {}
+        for r in records:
+            rid = getattr(r, "room_id", "")
+            room = self._store.get_room(rid) if rid else None
+            names[r.id] = room.name if room else ""
+        return names
+
     def _on_export_startup_report(self) -> None:
         job_id = self._selected_job_id()
         if not job_id:
@@ -2853,7 +3114,7 @@ class MainWindow(QMainWindow):
         if prefill_record is None:
             prefill_record = records[0]
 
-        dlg = StartupReportDialog(prefill_meta(prefill_record, records), self)
+        dlg = StartupReportDialog(prefill_meta(prefill_record, records, job), self)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return
         meta = dlg.metadata()
@@ -2869,11 +3130,74 @@ class MainWindow(QMainWindow):
         if not path:
             return
         try:
-            export_startup_report(meta, records, path)
+            export_startup_report(meta, records, path, self._room_names_for(records))
             QMessageBox.information(
                 self, "Export Complete",
                 f"Startup Report with {len(records)} valve"
                 f"{'s' if len(records) != 1 else ''} exported to:\n{path}"
+            )
+        except TooManyValvesError as exc:
+            QMessageBox.warning(self, "Too Many Valves", str(exc))
+        except Exception as exc:
+            QMessageBox.critical(self, "Export Failed", str(exc))
+
+    def _on_export_combined_report(self) -> None:
+        job_id = self._selected_job_id()
+        if not job_id:
+            QMessageBox.information(self, "No Job Selected",
+                                    "Select a job (or a checkout in it) first, then export.")
+            return
+        self._export_combined_report(job_id)
+
+    def _export_combined_report(self, job_id: str) -> None:
+        """Export ONE workbook: Cover + Startup Report + a sheet per checkout."""
+        records = self._store.records_for_job(job_id)
+        if not records:
+            QMessageBox.information(self, "No Checkouts",
+                                    "This job has no checkout records to export.")
+            return
+
+        # v1 cap — the Startup Report tab is limited to 40 preformatted rows.
+        if len(records) > MAX_VALVES:
+            QMessageBox.warning(
+                self, "Too Many Valves",
+                f"This job has {len(records)} valves. The Startup Report template "
+                f"supports {MAX_VALVES} valves in v1. Split the report or wait for "
+                "row-extension support.",
+            )
+            return
+
+        job = self._store.get_job(job_id)
+
+        # Pre-fill from the selected checkout if it belongs to this job, else the first record.
+        prefill_record = None
+        if self._current_id:
+            cur = self._store.get(self._current_id)
+            if cur and cur.job_id == job_id:
+                prefill_record = cur
+        if prefill_record is None:
+            prefill_record = records[0]
+
+        dlg = StartupReportDialog(prefill_meta(prefill_record, records, job), self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        meta = dlg.metadata()
+
+        # Filename: {JobNumber}_{JobName}_Startup and Checkout Report.xlsx
+        stem = "_".join(p for p in [getattr(job, "job_number", ""), getattr(job, "job_name", "")] if p) or "Job"
+        default_name = re.sub(r'[\\/:*?"<>|]', "-", f"{stem}_Startup and Checkout Report.xlsx")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Startup & Checkout Report", default_name,
+            "Excel Workbook (*.xlsx)"
+        )
+        if not path:
+            return
+        try:
+            export_combined_report(meta, records, path, self._room_names_for(records))
+            QMessageBox.information(
+                self, "Export Complete",
+                f"Startup & Checkout Report ({len(records)} valve"
+                f"{'s' if len(records) != 1 else ''}) exported to:\n{path}"
             )
         except TooManyValvesError as exc:
             QMessageBox.warning(self, "Too Many Valves", str(exc))
