@@ -24,6 +24,10 @@ from PySide6.QtWidgets import (
 
 from checkout_tool_backend import CheckoutStore, Job, ValveCheckout, DATA_FILE
 from checkout_export import export_records, NOTES_MAX_LINES
+from startup_report_export import (
+    StartupReportMeta, TooManyValvesError, MAX_VALVES,
+    export_startup_report, prefill_meta,
+)
 from version import __version__
 import updater
 
@@ -957,6 +961,75 @@ class BugSuggestionDialog(QDialog):
         self.accept()
 
 
+class StartupReportDialog(QDialog):
+    """Collects job-level metadata for the Startup Report export.
+
+    Project / Technician / Date / ATS Job # / Description are pre-filled from a
+    representative checkout record; Site / Building / Floor / Executive Summary are
+    collected here. Product Line(s) is pre-filled from the job's valve types. Any
+    field may be left blank (acceptable for v1).
+    """
+
+    def __init__(self, meta: StartupReportMeta, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Export Startup Report")
+        self.setModal(True)
+        self.resize(460, 420)
+
+        self._project    = QLineEdit(meta.project)
+        self._site_name  = QLineEdit(meta.site_name)
+        self._building   = QLineEdit(meta.building)
+        self._floor      = QLineEdit(meta.floor)
+        self._technician = QLineEdit(meta.technician)
+        self._ats_job    = QLineEdit(meta.ats_job_number)
+        self._date       = QLineEdit(meta.date_of_checkout)
+        self._product    = QLineEdit(meta.product_lines)
+        self._desc       = QLineEdit(meta.description)
+        self._exec       = QPlainTextEdit(meta.executive_summary)
+        self._exec.setPlaceholderText("Executive summary (optional)")
+        self._exec.setMinimumHeight(90)
+
+        form = QFormLayout()
+        form.addRow("Project",          self._project)
+        form.addRow("Site Name",        self._site_name)
+        form.addRow("Building",         self._building)
+        form.addRow("Floor",            self._floor)
+        form.addRow("Technician",       self._technician)
+        form.addRow("ATS Job Number",   self._ats_job)
+        form.addRow("Date of Checkout", self._date)
+        form.addRow("Product Line(s)",  self._product)
+        form.addRow("Description",      self._desc)
+        form.addRow("Executive Summary", self._exec)
+
+        btns = QDialogButtonBox()
+        btns.addButton("Export…", QDialogButtonBox.ButtonRole.AcceptRole)
+        btns.addButton(QDialogButtonBox.StandardButton.Cancel)
+        btns.accepted.connect(self.accept)
+        btns.rejected.connect(self.reject)
+
+        lay = QVBoxLayout(self)
+        hint = QLabel("Fields are pre-filled from the selected checkout. "
+                      "Edit as needed; blanks are allowed.")
+        hint.setWordWrap(True)
+        lay.addWidget(hint)
+        lay.addLayout(form)
+        lay.addWidget(btns)
+
+    def metadata(self) -> StartupReportMeta:
+        return StartupReportMeta(
+            project=self._project.text().strip(),
+            site_name=self._site_name.text().strip(),
+            building=self._building.text().strip(),
+            floor=self._floor.text().strip(),
+            technician=self._technician.text().strip(),
+            ats_job_number=self._ats_job.text().strip(),
+            date_of_checkout=self._date.text().strip(),
+            product_lines=self._product.text().strip(),
+            description=self._desc.text().strip(),
+            executive_summary=self._exec.toPlainText().strip(),
+        )
+
+
 # ── Main window ───────────────────────────────────────────────────────────────
 
 class MainWindow(QMainWindow):
@@ -1020,6 +1093,9 @@ class MainWindow(QMainWindow):
         export_job_act = QAction("Export All Checkouts in Job\u2026", self)
         export_job_act.triggered.connect(self._on_export_job)
         file_menu.addAction(export_job_act)
+        export_sr_act = QAction("Export Startup Report\u2026", self)
+        export_sr_act.triggered.connect(self._on_export_startup_report)
+        file_menu.addAction(export_sr_act)
         file_menu.addSeparator()
         backup_act = QAction("Backup Data\u2026", self)
         backup_act.triggered.connect(self._backup_data)
@@ -2258,6 +2334,7 @@ class MainWindow(QMainWindow):
             batch_act      = menu.addAction("Batch Add Checkouts\u2026")
             menu.addSeparator()
             export_job_act = menu.addAction("Export All Checkouts to Excel\u2026")
+            export_sr_act  = menu.addAction("Export Startup Report\u2026")
             menu.addSeparator()
             archive_act    = menu.addAction("Archive Job")
             menu.addSeparator()
@@ -2271,6 +2348,8 @@ class MainWindow(QMainWindow):
                 self._batch_add_for_job(id_)
             elif action == export_job_act:
                 self._export_job(id_)
+            elif action == export_sr_act:
+                self._export_startup_report(id_)
             elif action == archive_act:
                 self._archive_job(id_)
             elif action == del_act:
@@ -2737,6 +2816,69 @@ class MainWindow(QMainWindow):
                                     "Select a job first, then export.")
             return
         self._export_job(job_id)
+
+    def _on_export_startup_report(self) -> None:
+        job_id = self._selected_job_id()
+        if not job_id:
+            QMessageBox.information(self, "No Job Selected",
+                                    "Select a job (or a checkout in it) first, then export.")
+            return
+        self._export_startup_report(job_id)
+
+    def _export_startup_report(self, job_id: str) -> None:
+        records = self._store.records_for_job(job_id)
+        if not records:
+            QMessageBox.information(self, "No Checkouts",
+                                    "This job has no checkout records to export.")
+            return
+
+        # v1 cap — do not export beyond the template's 40 preformatted rows.
+        if len(records) > MAX_VALVES:
+            QMessageBox.warning(
+                self, "Too Many Valves",
+                f"This job has {len(records)} valves. The Startup Report template "
+                f"supports {MAX_VALVES} valves in v1. Split the report or wait for "
+                "row-extension support.",
+            )
+            return
+
+        job = self._store.get_job(job_id)
+
+        # Pre-fill from the selected checkout if it belongs to this job, else the first record.
+        prefill_record = None
+        if self._current_id:
+            cur = self._store.get(self._current_id)
+            if cur and cur.job_id == job_id:
+                prefill_record = cur
+        if prefill_record is None:
+            prefill_record = records[0]
+
+        dlg = StartupReportDialog(prefill_meta(prefill_record, records), self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        meta = dlg.metadata()
+
+        default_name = (
+            f"{job.job_number or job.job_name or 'Job'} — Startup Report.xlsx"
+            if job else "Startup Report.xlsx"
+        )
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Startup Report", default_name,
+            "Excel Workbook (*.xlsx)"
+        )
+        if not path:
+            return
+        try:
+            export_startup_report(meta, records, path)
+            QMessageBox.information(
+                self, "Export Complete",
+                f"Startup Report with {len(records)} valve"
+                f"{'s' if len(records) != 1 else ''} exported to:\n{path}"
+            )
+        except TooManyValvesError as exc:
+            QMessageBox.warning(self, "Too Many Valves", str(exc))
+        except Exception as exc:
+            QMessageBox.critical(self, "Export Failed", str(exc))
 
     def _export_checkout(self, record_id: str) -> None:
         record = self._store.get(record_id)
