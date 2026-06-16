@@ -26,7 +26,7 @@ from checkout_tool_backend import CheckoutStore, Job, ValveCheckout, DATA_FILE
 from checkout_export import export_records, NOTES_MAX_LINES
 from startup_report_export import (
     StartupReportMeta, TooManyValvesError, MAX_VALVES,
-    export_startup_report, prefill_meta,
+    export_startup_report, export_combined_report, prefill_meta,
 )
 from version import __version__
 import updater
@@ -1096,6 +1096,9 @@ class MainWindow(QMainWindow):
         export_sr_act = QAction("Export Startup Report\u2026", self)
         export_sr_act.triggered.connect(self._on_export_startup_report)
         file_menu.addAction(export_sr_act)
+        export_combined_act = QAction("Export Startup & Checkout Report\u2026", self)
+        export_combined_act.triggered.connect(self._on_export_combined_report)
+        file_menu.addAction(export_combined_act)
         file_menu.addSeparator()
         backup_act = QAction("Backup Data\u2026", self)
         backup_act.triggered.connect(self._backup_data)
@@ -2337,6 +2340,7 @@ class MainWindow(QMainWindow):
             menu.addSeparator()
             export_job_act = menu.addAction("Export All Checkouts to Excel\u2026")
             export_sr_act  = menu.addAction("Export Startup Report\u2026")
+            export_combined_act = menu.addAction("Export Startup & Checkout Report\u2026")
             menu.addSeparator()
             archive_act    = menu.addAction("Archive Job")
             menu.addSeparator()
@@ -2352,6 +2356,8 @@ class MainWindow(QMainWindow):
                 self._export_job(id_)
             elif action == export_sr_act:
                 self._export_startup_report(id_)
+            elif action == export_combined_act:
+                self._export_combined_report(id_)
             elif action == archive_act:
                 self._archive_job(id_)
             elif action == del_act:
@@ -2876,6 +2882,69 @@ class MainWindow(QMainWindow):
                 self, "Export Complete",
                 f"Startup Report with {len(records)} valve"
                 f"{'s' if len(records) != 1 else ''} exported to:\n{path}"
+            )
+        except TooManyValvesError as exc:
+            QMessageBox.warning(self, "Too Many Valves", str(exc))
+        except Exception as exc:
+            QMessageBox.critical(self, "Export Failed", str(exc))
+
+    def _on_export_combined_report(self) -> None:
+        job_id = self._selected_job_id()
+        if not job_id:
+            QMessageBox.information(self, "No Job Selected",
+                                    "Select a job (or a checkout in it) first, then export.")
+            return
+        self._export_combined_report(job_id)
+
+    def _export_combined_report(self, job_id: str) -> None:
+        """Export ONE workbook: Cover + Startup Report + a sheet per checkout."""
+        records = self._store.records_for_job(job_id)
+        if not records:
+            QMessageBox.information(self, "No Checkouts",
+                                    "This job has no checkout records to export.")
+            return
+
+        # v1 cap — the Startup Report tab is limited to 40 preformatted rows.
+        if len(records) > MAX_VALVES:
+            QMessageBox.warning(
+                self, "Too Many Valves",
+                f"This job has {len(records)} valves. The Startup Report template "
+                f"supports {MAX_VALVES} valves in v1. Split the report or wait for "
+                "row-extension support.",
+            )
+            return
+
+        job = self._store.get_job(job_id)
+
+        # Pre-fill from the selected checkout if it belongs to this job, else the first record.
+        prefill_record = None
+        if self._current_id:
+            cur = self._store.get(self._current_id)
+            if cur and cur.job_id == job_id:
+                prefill_record = cur
+        if prefill_record is None:
+            prefill_record = records[0]
+
+        dlg = StartupReportDialog(prefill_meta(prefill_record, records), self)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return
+        meta = dlg.metadata()
+
+        # Filename: {JobNumber}_{JobName}_Startup and Checkout Report.xlsx
+        stem = "_".join(p for p in [getattr(job, "job_number", ""), getattr(job, "job_name", "")] if p) or "Job"
+        default_name = re.sub(r'[\\/:*?"<>|]', "-", f"{stem}_Startup and Checkout Report.xlsx")
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Export Startup & Checkout Report", default_name,
+            "Excel Workbook (*.xlsx)"
+        )
+        if not path:
+            return
+        try:
+            export_combined_report(meta, records, path)
+            QMessageBox.information(
+                self, "Export Complete",
+                f"Startup & Checkout Report ({len(records)} valve"
+                f"{'s' if len(records) != 1 else ''}) exported to:\n{path}"
             )
         except TooManyValvesError as exc:
             QMessageBox.warning(self, "Too Many Valves", str(exc))

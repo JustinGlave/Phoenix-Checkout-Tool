@@ -19,6 +19,7 @@ metadata dialog and menu wiring live in checkout_tool_gui.py.
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
@@ -241,13 +242,12 @@ def _format_notes_rows(ws) -> None:
 
 # ── Public export entry point ───────────────────────────────────────────────────
 
-def export_startup_report(meta: StartupReportMeta, records, output_path: str) -> None:
-    """
-    Populate the embedded Startup Report template with job metadata + valve rows
-    and save to output_path (.xlsx).
+def _build_startup_workbook(meta: StartupReportMeta, records):
+    """Load the embedded template and fill the Startup Report tab (no save).
 
-    Raises TooManyValvesError if records exceeds the v1 cap (MAX_VALVES). Never
-    writes the Cover tab or column A. Writes plain values only.
+    Returns the openpyxl Workbook (Cover + Startup Report tabs). Raises
+    TooManyValvesError if records exceeds the v1 cap. Never writes the Cover tab or
+    column A; writes plain values only.
     """
     records = list(records)
     if len(records) > MAX_VALVES:
@@ -278,5 +278,55 @@ def export_startup_report(meta: StartupReportMeta, records, output_path: str) ->
 
     # Notes column (K) wraps long text and the data rows auto-fit their height.
     _format_notes_rows(ws)
+    return wb
 
+
+def export_startup_report(meta: StartupReportMeta, records, output_path: str) -> None:
+    """
+    Populate the embedded Startup Report template with job metadata + valve rows
+    and save to output_path (.xlsx).
+
+    Raises TooManyValvesError if records exceeds the v1 cap (MAX_VALVES). Never
+    writes the Cover tab or column A. Writes plain values only.
+    """
+    _build_startup_workbook(meta, records).save(output_path)
+
+
+def _append_checkout_sheets(wb, records) -> None:
+    """Append one filled per-valve checkout sheet per record into wb.
+
+    Reuses the existing checkout export engine (checkout_export) by composition —
+    it is not modified. Imported lazily so this module stays light unless the
+    combined export is used.
+    """
+    from checkout_export import (
+        _fill_one, _copy_ws_into, _resource_path, _VALVE_TYPE_TEMPLATE, TEMPLATE_NAME,
+    )
+    for rec in records:
+        name = _VALVE_TYPE_TEMPLATE.get(getattr(rec, "valve_type", "") or "", TEMPLATE_NAME)
+        path = _resource_path(name)
+        if not os.path.exists(path):
+            raise FileNotFoundError(
+                f"Checkout template '{name}' not found.\n"
+                "Please reinstall the application to restore bundled templates."
+            )
+        src_ws = openpyxl.load_workbook(path).active
+        _fill_one(src_ws, rec)          # fills the per-type checkout sheet
+        _copy_ws_into(src_ws, wb)       # transplants it into the combined workbook
+
+
+def export_combined_report(meta: StartupReportMeta, records, output_path: str) -> None:
+    """
+    Export ONE workbook combining the Startup Report and the per-valve checkout
+    sheets: Cover + Startup Report + one sheet per checkout record, saved to
+    output_path (.xlsx).
+
+    Raises TooManyValvesError if records exceeds the v1 cap (the Startup Report tab
+    is limited to MAX_VALVES rows). The Startup Report portion is identical to
+    export_startup_report; the checkout sheets are produced by the existing
+    checkout_export engine and transplanted into the same workbook.
+    """
+    records = list(records)
+    wb = _build_startup_workbook(meta, records)   # Cover + Startup Report (caps at MAX_VALVES)
+    _append_checkout_sheets(wb, records)          # + one checkout sheet per record
     wb.save(output_path)

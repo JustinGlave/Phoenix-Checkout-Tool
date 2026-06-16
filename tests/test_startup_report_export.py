@@ -25,7 +25,7 @@ import openpyxl
 import startup_report_export as sr
 from startup_report_export import (
     StartupReportMeta, TooManyValvesError, MAX_VALVES,
-    export_startup_report, prefill_meta, derive_product_lines,
+    export_startup_report, export_combined_report, prefill_meta, derive_product_lines,
     map_product_line, map_valve_type, map_pass_fail, generate_executive_summary,
 )
 from startup_report_template import template_stream
@@ -384,6 +384,66 @@ class ExecutiveSummaryTests(unittest.TestCase):
         meta = prefill_meta(recs[0], recs)
         self.assertIn("BAD-1", meta.executive_summary)
         self.assertIn("1 failed", meta.executive_summary)
+
+
+class CombinedExportTests(unittest.TestCase):
+    """The single combined workbook: Cover + Startup Report + one sheet per checkout."""
+
+    def _records(self):
+        from checkout_tool_backend import ValveCheckout
+        return [
+            ValveCheckout(valve_tag="03-FH-001", valve_type="Fume Hood", model="CELERIS 2",
+                          pass_fail="Pass", location_room="Lab 314", valve_min_sp="120",
+                          valve_max_sp="900", notes="ok"),
+            ValveCheckout(valve_tag="03-GEX-002", valve_type="GEX", model="CELERIS 2",
+                          pass_fail="Fail", notes="rebalance"),
+            ValveCheckout(valve_tag="03-PBC-003", valve_type="PBC Room", model="PBC (CSCP)",
+                          pass_fail="Pass"),
+        ]
+
+    def _export(self, meta, records):
+        out = os.path.join(tempfile.mkdtemp(prefix="sr_comb_"), "combined.xlsx")
+        export_combined_report(meta, records, out)
+        return openpyxl.load_workbook(out)
+
+    def test_sheet_layout(self):
+        recs = self._records()
+        wb = self._export(prefill_meta(recs[0], recs), recs)
+        names = wb.sheetnames
+        self.assertEqual(names[0], "Cover")
+        self.assertEqual(names[1], "Startup Report")
+        self.assertEqual(len(names), 2 + len(recs))  # two report tabs + one per checkout
+        for r in recs:
+            self.assertIn(r.valve_tag, names[2:], f"missing checkout sheet for {r.valve_tag}")
+
+    def test_startup_tab_populated(self):
+        recs = self._records()
+        meta = prefill_meta(recs[0], recs); meta.site_name = "Memorial"
+        ws = self._export(meta, recs)["Startup Report"]
+        self.assertEqual(ws["B15"].value, "03-FH-001")
+        self.assertEqual(ws["F15"].value, "Lab 314")
+        self.assertEqual(ws["C4"].value, "Memorial")
+        self.assertTrue(ws["G4"].value)  # generated exec summary
+
+    def test_checkout_sheet_filled(self):
+        recs = self._records()
+        wb = self._export(prefill_meta(recs[0], recs), recs)
+        ws = wb["03-FH-001"]
+        # checkout_export.fill_sheet writes the valve tag to C3 of the checkout sheet.
+        self.assertEqual(ws["C3"].value, "03-FH-001")
+
+    def test_cover_formulas_intact(self):
+        recs = self._records()
+        wb = self._export(prefill_meta(recs[0], recs), recs)
+        self.assertTrue(str(wb["Cover"]["C6"].value).startswith("="))
+
+    def test_combined_over_cap_raises(self):
+        from checkout_tool_backend import ValveCheckout
+        recs = [ValveCheckout(valve_tag=f"V{i}", valve_type="Fume Hood")
+                for i in range(MAX_VALVES + 1)]
+        with self.assertRaises(TooManyValvesError):
+            export_combined_report(StartupReportMeta(), recs,
+                                   os.path.join(tempfile.mkdtemp(), "x.xlsx"))
 
 
 if __name__ == "__main__":
