@@ -16,7 +16,7 @@ restructure.
 ### Added
 - **Startup Report export** — generate the Phoenix Startup Report workbook from a
   job's checkouts (Cover + Startup Report tabs). The template is embedded in source
-  so it ships through the exe-only auto-updater. Pass/Fail, product line, and valve
+  so it ships through the auto-updater. Pass/Fail, product line, and valve
   type are mapped per the integration spec; the Notes column wraps and its rows
   auto-fit; a factual Executive Summary (totals + failed valves) is generated and
   editable before export.
@@ -39,6 +39,17 @@ restructure.
   Site Name, Building, Floor, Job Number) — those are sourced from the job; column F
   shows the valve's room name. The per-valve "Location / Room" editor field was
   retired.
+
+### Fixed
+- **Auto-updater reworked to a full-bundle swap.** Updates now download the entire
+  application bundle (exe + `_internal`) and atomically replace the whole install
+  folder, instead of overwriting only the exe. An exe-only update could leave a new
+  PyInstaller bootloader running against the previous `_internal` runtime and fail to
+  launch ("Failed to start embedded python interpreter") whenever the build toolchain
+  changed; swapping the whole folder removes that failure mode. The swap stages on the
+  install volume (atomic rename), guards each step with rollback, and verifies the new
+  `exe` + `_internal` before discarding its backup. User data in `%APPDATA%` is never
+  touched. The auto-update asset is now `PhoenixCheckoutTool_FullInstall.zip`.
 
 ### Known
 - The GitHub-releases auto-update remains **unsigned** (Ed25519 signing is tracked

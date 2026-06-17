@@ -154,12 +154,25 @@ def download_update(info: UpdateInfo, tmp_zip: Path,
 def _apply_bat_content(exe_str: str, inst_str: str, zip_str: str, pid: int) -> str:
     """Build the updater batch script (full-bundle swap). Extracted for testing.
 
-    The script: waits for the running process (``pid``) to exit; extracts the
-    full-build zip; renames the old install folder aside; moves the new bundle
-    into place (a same-volume rename — effectively atomic); verifies the new exe
-    exists and rolls back to the old folder if not; relaunches; cleans up. Swapping
-    exe + _internal together avoids the stale-runtime brick of exe-only updates.
+    Hardened same-volume swap. The new bundle is extracted into a staging folder
+    that is a SIBLING of the install dir (``<install-parent>\\pct_update_<pid>``),
+    which guarantees it lives on the SAME volume as the install dir. Both folder
+    moves are therefore atomic same-volume renames (NTFS metadata ops) rather than
+    a cross-volume recursive copy with a partial-failure window — closing the brick
+    surface that a ``%TEMP%``-on-a-different-volume layout would otherwise open.
+
+    Flow: wait for the running process (``pid``) to exit; extract the full-build
+    zip into the staging folder; if extraction failed or has the wrong layout,
+    relaunch the UNTOUCHED old install. Otherwise rename the old install aside to
+    ``<inst>.bak-<pid>``; move the new bundle into place. EVERY move is
+    ``errorlevel``-guarded: a failed move-aside relaunches the old install intact;
+    a failed move-in (or a swap that lacks ``EXE_NAME`` **or** ``_internal``) rolls
+    back to the backup before relaunching. Only a verified-complete swap discards
+    the backup. Swapping exe + _internal together avoids the stale-runtime brick of
+    exe-only updates; the rollback + integrity gate avoid bricking on a partial or
+    locked swap.
     """
+    stage = str(Path(inst_str).parent / f"pct_update_{pid}")
     zip_ps = zip_str.replace("'", "''")
     return f"""@echo off
 :wait
@@ -168,19 +181,23 @@ if not errorlevel 1 (
     timeout /t 1 /nobreak >nul
     goto wait
 )
-set "PKG=%TEMP%\\pct_update_{pid}"
+set "PKG={stage}"
+set "BAK={inst_str}.bak-{pid}"
 if exist "%PKG%" rmdir /s /q "%PKG%"
 powershell -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; [System.IO.Compression.ZipFile]::ExtractToDirectory('{zip_ps}', '%PKG%')"
 if not exist "%PKG%\\{BUNDLE_DIR_NAME}\\{EXE_NAME}" goto relaunch
-if exist "{inst_str}.bak-{pid}" rmdir /s /q "{inst_str}.bak-{pid}"
-move "{inst_str}" "{inst_str}.bak-{pid}" >nul
+if exist "%BAK%" rmdir /s /q "%BAK%"
+move "{inst_str}" "%BAK%" >nul
+if errorlevel 1 goto relaunch
 move "%PKG%\\{BUNDLE_DIR_NAME}" "{inst_str}" >nul
-if exist "{inst_str}\\{EXE_NAME}" goto ok
-if exist "{inst_str}" rmdir /s /q "{inst_str}"
-move "{inst_str}.bak-{pid}" "{inst_str}" >nul
+if errorlevel 1 goto rollback
+if not exist "{inst_str}\\{EXE_NAME}" goto rollback
+if not exist "{inst_str}\\_internal" goto rollback
+rmdir /s /q "%BAK%" >nul 2>nul
 goto relaunch
-:ok
-rmdir /s /q "{inst_str}.bak-{pid}" >nul 2>nul
+:rollback
+if exist "{inst_str}" rmdir /s /q "{inst_str}"
+if exist "%BAK%" move "%BAK%" "{inst_str}" >nul
 :relaunch
 if exist "%PKG%" rmdir /s /q "%PKG%" >nul 2>nul
 del "{zip_str}" >nul 2>nul
