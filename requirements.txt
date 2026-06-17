@@ -9,6 +9,15 @@ shiboken6==6.11.0
 # live inside a sub-module not on the entry-point path).
 openpyxl==3.1.5
 
+# Frozen-build toolchain — pinned so PyInstaller's bootloader and the Python
+# runtime it stages into _internal are reproducible across builds
+# (FROZEN_BUILD_BASELINE / ADR-014). An unpinned PyInstaller was a root cause of
+# the v1.8.0 brick: an exe built with one bootloader version cannot start against
+# an _internal staged by a different version. The full-bundle updater now swaps
+# the whole folder so a mismatch is no longer fatal, but the pin keeps frozen
+# builds reproducible. Bump deliberately, then rebuild + boot-test, when upgrading.
+pyinstaller==6.20.0
+
 # Phoenix UI Platform — installed as a git submodule + editable install
 # per ADR-015. Submodule lives at commons/ (see .gitmodules). Refresh
 # the submodule SHA via `git submodule update --remote commons` when

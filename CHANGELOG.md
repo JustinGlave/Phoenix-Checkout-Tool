@@ -8,6 +8,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Changed
+- Pinned `pyinstaller==6.20.0` in `requirements.txt` so frozen builds are
+  reproducible. The PyInstaller version stages the bootloader + Python runtime
+  into `_internal`; leaving it unpinned was a root cause of the v1.8.0 auto-update
+  brick (a new bootloader against a stale `_internal`).
+
 ## [1.8.0] — 2026-06-16
 
 Startup Report export, a single combined report, and a Job → Room → Valve
